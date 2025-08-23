@@ -10,7 +10,7 @@ const http = require('http');
 
 class MembershipIntegrationTest {
   constructor() {
-    this.baseURL = 'http://localhost:5001/api';
+    this.baseURL = 'https://operator-backend-f5ie.onrender.com/api';
     this.token = null;
     this.testCustomerId = null;
     this.membershipCredentials = null;
