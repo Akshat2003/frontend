@@ -35,10 +35,8 @@ export const useBookings = () => {
     await fetchBookings(initialFilters);
   }, [fetchBookings]);
 
-  // Default load on component mount
-  useEffect(() => {
-    fetchBookings();
-  }, [fetchBookings]);
+  // Removed automatic loading on component mount
+  // Components should explicitly call fetchBookings with appropriate filters
 
   // Create new booking
   const createBooking = async (bookingData) => {

@@ -101,9 +101,8 @@ const ActiveListings = () => {
         siteId: currentSite._id || currentSite.siteId,
         status: 'active'
       });
-    } else {
-      fetchBookings({ status: 'active' });
     }
+    // Removed fallback to fetch all bookings when no site is selected
     setRefreshKey(prev => prev + 1);
   };
 
