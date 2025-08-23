@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(taskkill:*)",
+      "Bash(curl:*)",
+      "Bash(node server.js)",
+      "Bash(node:*)",
+      "Bash(npm start)",
+      "Bash(npm run dev:*)",
+      "Bash(powershell:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
