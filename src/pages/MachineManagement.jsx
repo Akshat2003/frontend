@@ -76,7 +76,7 @@ const MachineManagement = () => {
           siteId: siteFilter,
           limit: 50
         }),
-        apiService.getSites({ limit: 100 })
+        apiService.getSites({ limit: 100, status: 'active' })
       ]);
       setMachines(machinesResponse.data.machines || []);
       setSites(sitesResponse.data.sites || []);
@@ -96,10 +96,12 @@ const MachineManagement = () => {
 
   const siteOptions = [
     { value: '', label: 'All Sites' },
-    ...sites.map(site => ({
-      value: site._id,
-      label: `${site.siteName} (${site.siteId})`
-    }))
+    ...sites
+      .filter(site => site.status === 'active')
+      .map(site => ({
+        value: site._id,
+        label: `${site.siteName} (${site.siteId})`
+      }))
   ];
 
   const handleCreateMachine = () => {

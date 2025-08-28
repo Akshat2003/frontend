@@ -56,7 +56,7 @@ export const SiteProvider = ({ children }) => {
   const loadAllSites = async () => {
     setIsLoading(true);
     try {
-      const response = await apiService.getSites();
+      const response = await apiService.getSites({ status: 'active' });
       setAvailableSites(response.data.sites || []);
       
       // If no current site is set, use the first available
