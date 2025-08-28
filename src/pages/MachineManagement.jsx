@@ -23,10 +23,12 @@ const MachineManagement = () => {
     machineNumber: '',
     machineName: '',
     machineType: 'two-wheeler',
+    parkingType: 'rotary',
     status: 'online',
     capacity: {
       total: 4
     },
+    pallets: [], // For custom pallet names in puzzle parking
     specifications: {
       supportedVehicleTypes: ['two-wheeler'],
       maxVehicleLength: 5000,
@@ -59,6 +61,11 @@ const MachineManagement = () => {
     { value: '', label: 'All Types' },
     { value: 'two-wheeler', label: 'Two-Wheeler' },
     { value: 'four-wheeler', label: 'Four-Wheeler' }
+  ];
+
+  const parkingTypeOptions = [
+    { value: 'puzzle', label: 'Puzzle Parking' },
+    { value: 'rotary', label: 'Rotary Parking' }
   ];
 
   useEffect(() => {
@@ -111,10 +118,12 @@ const MachineManagement = () => {
       machineNumber: '',
       machineName: '',
       machineType: 'two-wheeler',
+      parkingType: 'rotary',
       status: 'online',
       capacity: {
         total: 4
       },
+      pallets: [],
       specifications: {
         supportedVehicleTypes: ['two-wheeler'],
         maxVehicleLength: 5000,
@@ -142,10 +151,15 @@ const MachineManagement = () => {
       machineNumber: machine.machineNumber || '',
       machineName: machine.machineName || '',
       machineType: machine.machineType || 'two-wheeler',
+      parkingType: machine.parkingType || 'rotary',
       status: machine.status || 'online',
       capacity: {
         total: machine.capacity?.total || 4
       },
+      pallets: machine.pallets?.map(pallet => ({
+        number: pallet.number,
+        customName: pallet.customName || ''
+      })) || [],
       specifications: {
         supportedVehicleTypes: machine.specifications?.supportedVehicleTypes || ['two-wheeler'],
         maxVehicleLength: machine.specifications?.maxVehicleLength || 5000,
@@ -167,6 +181,31 @@ const MachineManagement = () => {
     setShowCreateForm(true);
   };
 
+  // Generate pallets based on total count
+  const generatePallets = (totalPallets) => {
+    const pallets = [];
+    for (let i = 1; i <= totalPallets; i++) {
+      pallets.push({
+        number: i,
+        customName: `Pallet ${i}`
+      });
+    }
+    return pallets;
+  };
+
+  // Handle total pallets change
+  const handleTotalPalletsChange = (e) => {
+    const newTotal = parseInt(e.target.value) || 0;
+    setFormData(prev => {
+      const newPallets = generatePallets(newTotal);
+      return {
+        ...prev,
+        capacity: { ...prev.capacity, total: newTotal },
+        pallets: newPallets
+      };
+    });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -180,6 +219,14 @@ const MachineManagement = () => {
           supportedVehicleTypes: [formData.machineType]
         }
       };
+
+      // Include custom pallet names for puzzle parking
+      if (formData.parkingType === 'puzzle' && formData.pallets.length > 0) {
+        payload.pallets = formData.pallets.map(pallet => ({
+          number: pallet.number,
+          customName: pallet.customName || `Pallet ${pallet.number}`
+        }));
+      }
 
       // Only include warrantyExpiryDate if it has a value
       if (formData.warrantyExpiryDate) {
@@ -376,6 +423,14 @@ const MachineManagement = () => {
                     error={errors.machineType}
                     required
                   />
+                  <Select
+                    label="Parking Machine Type"
+                    value={formData.parkingType}
+                    onChange={(e) => setFormData(prev => ({ ...prev, parkingType: e.target.value }))}
+                    options={parkingTypeOptions}
+                    error={errors.parkingType}
+                    required
+                  />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -383,10 +438,7 @@ const MachineManagement = () => {
                     label="Total Pallets"
                     type="number"
                     value={formData.capacity.total}
-                    onChange={(e) => setFormData(prev => ({ 
-                      ...prev, 
-                      capacity: { ...prev.capacity, total: e.target.value }
-                    }))}
+                    onChange={handleTotalPalletsChange}
                     error={errors['capacity.total']}
                     required
                     placeholder="Number of pallets"
@@ -491,6 +543,49 @@ const MachineManagement = () => {
                   />
                 </div>
               </div>
+
+              {/* Pallet Names Section - Only for Puzzle Parking */}
+              {formData.parkingType === 'puzzle' && formData.pallets.length > 0 && (
+                <div className="space-y-4">
+                  <h3 className="font-medium text-gray-900 border-b pb-2">Pallet Names (Puzzle Parking)</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {formData.pallets.map((pallet, index) => (
+                      <Input
+                        key={pallet.number}
+                        label={`Pallet ${pallet.number} Name`}
+                        value={pallet.customName}
+                        onChange={(e) => setFormData(prev => ({
+                          ...prev,
+                          pallets: prev.pallets.map((p, i) => 
+                            i === index ? { ...p, customName: e.target.value } : p
+                          )
+                        }))}
+                        placeholder={`e.g., Section A${pallet.number}`}
+                      />
+                    ))}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    <p>
+                      <strong>Puzzle Parking Capacity:</strong> 
+                      {formData.machineType === 'two-wheeler' ? ' 3 spots per pallet' : ' 1 spot per pallet'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Rotary Parking Info */}
+              {formData.parkingType === 'rotary' && (
+                <div className="space-y-4">
+                  <h3 className="font-medium text-gray-900 border-b pb-2">Rotary Parking Configuration</h3>
+                  <div className="text-sm text-gray-600">
+                    <p>
+                      <strong>Rotary Parking Capacity:</strong> 
+                      {formData.machineType === 'two-wheeler' ? ' 6 spots per pallet' : ' 1 spot per pallet'}
+                    </p>
+                    <p>Pallets will be automatically numbered (Pallet 1, Pallet 2, etc.)</p>
+                  </div>
+                </div>
+              )}
 
               <div className="flex justify-end space-x-3">
                 <Button
@@ -608,6 +703,10 @@ const MachineManagement = () => {
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Location:</span>
                     <span className="font-medium">{machine.location?.building || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Parking Type:</span>
+                    <span className="font-medium capitalize">{machine.parkingType || 'Rotary'}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Capacity:</span>
