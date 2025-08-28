@@ -166,10 +166,12 @@ const SiteManagement = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log('Form data:', formData); // Debug log
     try {
       const payload = {
         siteId: formData.siteId,
         siteName: formData.siteName,
+        status: formData.status || 'active',
         location: {
           address: formData.address,
           coordinates: {
@@ -179,15 +181,34 @@ const SiteManagement = () => {
           landmark: formData.landmark,
           zone: formData.zone
         },
-        contactInfo: formData.contactInfo,
-        capacity: {
-          total: parseInt(formData.capacity.total) || 0,
-          twoWheeler: parseInt(formData.capacity.twoWheeler) || 0,
-          fourWheeler: parseInt(formData.capacity.fourWheeler) || 0
+        siteManager: {
+          name: formData.contactInfo?.name || 'Site Manager',
+          phoneNumber: formData.contactInfo?.phone || '9999999999',
+          email: formData.contactInfo?.email || 'manager@sparkee.com'
         },
-        operatingHours: formData.operatingHours,
-        status: formData.status
+        configuration: {
+          totalMachines: 2,
+          totalCapacity: parseInt(formData.capacity?.total) || 16,
+          supportedVehicleTypes: ['two-wheeler', 'four-wheeler'],
+          operatingHours: {
+            monday: { isOpen: true, openTime: formData.operatingHours?.openTime || '06:00', closeTime: formData.operatingHours?.closeTime || '22:00' },
+            tuesday: { isOpen: true, openTime: formData.operatingHours?.openTime || '06:00', closeTime: formData.operatingHours?.closeTime || '22:00' },
+            wednesday: { isOpen: true, openTime: formData.operatingHours?.openTime || '06:00', closeTime: formData.operatingHours?.closeTime || '22:00' },
+            thursday: { isOpen: true, openTime: formData.operatingHours?.openTime || '06:00', closeTime: formData.operatingHours?.closeTime || '22:00' },
+            friday: { isOpen: true, openTime: formData.operatingHours?.openTime || '06:00', closeTime: formData.operatingHours?.closeTime || '22:00' },
+            saturday: { isOpen: true, openTime: formData.operatingHours?.openTime || '06:00', closeTime: formData.operatingHours?.closeTime || '22:00' },
+            sunday: { isOpen: true, openTime: formData.operatingHours?.openTime || '07:00', closeTime: formData.operatingHours?.closeTime || '21:00' }
+          }
+        },
+        pricing: {
+          twoWheeler: { baseRate: 15, minimumCharge: 15 },
+          fourWheeler: { baseRate: 25, minimumCharge: 25 },
+          peakHourMultiplier: 1.5,
+          peakHours: { start: '08:00', end: '20:00' }
+        }
       };
+
+      console.log('Payload being sent:', payload); // Debug log
 
       if (editingSite) {
         await apiService.updateSite(editingSite._id, payload);
@@ -199,12 +220,22 @@ const SiteManagement = () => {
       fetchSites();
     } catch (error) {
       console.error('Error saving site:', error);
+      console.error('Error details:', {
+        message: error.message,
+        status: error.statusCode,
+        validationErrors: error.validationErrors,
+        fullError: error
+      });
+      
       if (error.validationErrors) {
         const newErrors = {};
         error.validationErrors.forEach(err => {
           newErrors[err.field] = err.message;
         });
         setErrors(newErrors);
+      } else {
+        // Show general error message
+        alert(`Error creating site: ${error.message || 'Unknown error occurred'}`);
       }
     }
   };
