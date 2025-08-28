@@ -429,6 +429,13 @@ class ApiService {
     });
   }
 
+  async deleteSitePermanently(siteId, reason, force = false) {
+    return this.request(`/sites/${siteId}/permanent`, {
+      method: 'DELETE',
+      body: JSON.stringify({ reason, force }),
+    });
+  }
+
   async getSiteStatistics(siteId) {
     return this.request(`/sites/${siteId}/statistics`);
   }

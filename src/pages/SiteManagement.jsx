@@ -220,6 +220,27 @@ const SiteManagement = () => {
     }
   };
 
+  const handleDeletePermanently = async (site) => {
+    const confirmMessage = `⚠️ PERMANENT DELETE WARNING ⚠️\n\nThis will permanently delete "${site.siteName}" and ALL associated data including:\n- All booking records\n- All machines\n- All user assignments\n\nThis action CANNOT be undone.\n\nType "DELETE" to confirm:`;
+    
+    const userInput = window.prompt(confirmMessage);
+    
+    if (userInput === 'DELETE') {
+      const reason = window.prompt('Please provide a reason for permanent deletion:');
+      
+      try {
+        await apiService.deleteSitePermanently(site._id, reason || 'Permanent deletion by admin', true);
+        alert(`Site "${site.siteName}" has been permanently deleted.`);
+        fetchSites();
+      } catch (error) {
+        console.error('Error permanently deleting site:', error);
+        alert(`Error: ${error.message || 'Failed to delete site permanently'}`);
+      }
+    } else if (userInput !== null) {
+      alert('Deletion cancelled. You must type "DELETE" exactly to confirm.');
+    }
+  };
+
   const filteredSites = sites.filter(site =>
     site.siteName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     site.siteId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -558,6 +579,15 @@ const SiteManagement = () => {
                       Deactivate
                     </Button>
                   )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDeletePermanently(site)}
+                    className="text-red-800 border-red-300 hover:bg-red-100 bg-red-25"
+                  >
+                    <Trash2 size={14} className="mr-1" />
+                    Delete Forever
+                  </Button>
                 </div>
               </div>
             ))}
