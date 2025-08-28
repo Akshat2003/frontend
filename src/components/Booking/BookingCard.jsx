@@ -42,7 +42,9 @@ const BookingCard = ({ booking, onClick }) => {
             </div>
             <div className="flex items-center space-x-2">
               <Hash size={14} />
-              <span>Pallet {booking.palletNumber}</span>
+              <span>
+                {booking.palletName ? booking.palletName : `Pallet ${booking.palletNumber}`}
+              </span>
             </div>
             <div className="flex items-center space-x-2">
               <Hash size={14} />

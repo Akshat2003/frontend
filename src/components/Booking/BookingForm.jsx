@@ -52,14 +52,24 @@ const BookingForm = ({ onBookingComplete }) => {
     machineData: machine
   }));
 
+  // Find selected machine data to check parking type
+  const selectedMachine = availableMachines.find(machine => machine._id === bookingData.machineNumber);
+  
   // Generate pallet options from selected machine pallets
   const palletOptions = selectedMachinePallets
     .filter(pallet => pallet.status === 'available' && pallet.currentOccupancy < pallet.vehicleCapacity)
-    .map(pallet => ({
-      value: pallet.number.toString(),
-      label: `Pallet ${pallet.number} (${pallet.vehicleCapacity - pallet.currentOccupancy} spaces available)`,
-      palletData: pallet
-    }));
+    .map(pallet => {
+      // Use custom name for puzzle parking, default name for rotary
+      const palletName = selectedMachine?.parkingType === 'puzzle' && pallet.customName 
+        ? pallet.customName 
+        : `Pallet ${pallet.number}`;
+      
+      return {
+        value: pallet.number.toString(),
+        label: `${palletName} (${pallet.vehicleCapacity - pallet.currentOccupancy} spaces available)`,
+        palletData: pallet
+      };
+    });
 
   // Load available machines when vehicle type or site changes
   useEffect(() => {
@@ -191,6 +201,9 @@ const BookingForm = ({ onBookingComplete }) => {
         throw new Error('Selected machine not found');
       }
 
+      // Find selected pallet to get custom name
+      const selectedPallet = selectedMachinePallets.find(pallet => pallet.number === parseInt(bookingData.palletNumber));
+      
       // Prepare booking data for API
       const bookingPayload = {
         customerName: customerData.customerName,
@@ -202,6 +215,11 @@ const BookingForm = ({ onBookingComplete }) => {
         siteId: currentSite?._id || currentSite?.siteId // Include selected site ID
         // Omit optional fields that are empty to avoid validation errors
       };
+
+      // Add pallet custom name for puzzle parking machines
+      if (selectedMachine.parkingType === 'puzzle' && selectedPallet?.customName) {
+        bookingPayload.palletName = selectedPallet.customName;
+      }
 
       // Only add optional fields if they have values
       if (customerData.email && customerData.email.trim()) {

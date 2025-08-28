@@ -232,7 +232,9 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
             <Hash className="text-gray-500" size={16} />
             <span className="text-sm text-gray-600">Pallet</span>
           </div>
-          <p className="font-semibold text-gray-900">{booking.palletNumber}</p>
+          <p className="font-semibold text-gray-900">
+            {booking.palletName ? booking.palletName : `Pallet ${booking.palletNumber}`}
+          </p>
         </div>
         
         <div className="bg-gray-50 rounded-lg p-4">

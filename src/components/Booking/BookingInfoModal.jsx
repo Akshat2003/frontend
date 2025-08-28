@@ -153,9 +153,11 @@ const BookingInfoModal = ({ booking, isOpen, onClose }) => {
             <div className="bg-white rounded-lg p-4">
               <div className="flex items-center space-x-2 mb-2">
                 <Hash className="text-gray-500" size={16} />
-                <span className="text-sm text-gray-600">Pallet Number</span>
+                <span className="text-sm text-gray-600">Pallet</span>
               </div>
-              <p className="font-semibold text-gray-900">{booking.palletNumber}</p>
+              <p className="font-semibold text-gray-900">
+                {booking.palletName ? booking.palletName : `Pallet ${booking.palletNumber}`}
+              </p>
             </div>
             <div className="bg-white rounded-lg p-4">
               <div className="flex items-center space-x-2 mb-2">

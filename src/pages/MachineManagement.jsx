@@ -312,7 +312,11 @@ const MachineManagement = () => {
                 {selectedMachinePallets.map((pallet) => (
                   <div key={pallet.number} className="bg-gray-50 rounded-lg p-4 border">
                     <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-medium text-gray-900">Pallet {pallet.number}</h3>
+                      <h3 className="font-medium text-gray-900">
+                        {selectedMachine?.parkingType === 'puzzle' && pallet.customName 
+                          ? pallet.customName 
+                          : `Pallet ${pallet.number}`}
+                      </h3>
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                         pallet.status === 'available' 
                           ? 'bg-green-100 text-green-800'
