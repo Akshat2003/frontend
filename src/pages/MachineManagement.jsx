@@ -178,9 +178,13 @@ const MachineManagement = () => {
         specifications: {
           ...formData.specifications,
           supportedVehicleTypes: [formData.machineType]
-        },
-        warrantyExpiryDate: formData.warrantyExpiryDate ? new Date(formData.warrantyExpiryDate) : null
+        }
       };
+
+      // Only include warrantyExpiryDate if it has a value
+      if (formData.warrantyExpiryDate) {
+        payload.warrantyExpiryDate = new Date(formData.warrantyExpiryDate);
+      }
 
       if (editingMachine) {
         await apiService.updateMachine(editingMachine._id, payload);
