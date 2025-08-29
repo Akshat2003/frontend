@@ -21,7 +21,7 @@ const Modal = ({ isOpen, onClose, title, children, size = 'medium', maxWidth }) 
 
   return (
     <div 
-      className="fixed inset-0 bg-black bg-opacity-30 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 md:p-8 z-50"
+      className="fixed inset-0 bg-white bg-opacity-10 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 md:p-8 z-50"
       onClick={handleBackdropClick}
     >
       <div 
