@@ -30,7 +30,7 @@ export const exportBookingsToPDF = (bookings, siteName, siteId) => {
 
   // Prepare table data
   const tableData = bookings.map((booking, index) => [
-    index + 1,
+    String(index + 1),
     booking.vehicleNumber || 'N/A',
     booking.customerName || 'N/A',
     booking.phoneNumber || 'N/A',
@@ -39,7 +39,7 @@ export const exportBookingsToPDF = (bookings, siteName, siteId) => {
     booking.palletName || `Pallet ${booking.palletNumber}` || 'N/A',
     (booking.status || '').charAt(0).toUpperCase() + (booking.status || '').slice(1),
     (booking.payment?.method || booking.paymentMethod || 'N/A').charAt(0).toUpperCase() + (booking.payment?.method || booking.paymentMethod || 'N/A').slice(1),
-    formatCurrency(booking.payment?.amount || booking.totalAmount || 0),
+    `₹${(booking.payment?.amount || booking.totalAmount || 0).toFixed(2)}`,
     new Date(booking.createdAt).toLocaleDateString(),
     new Date(booking.createdAt).toLocaleTimeString()
   ]);
@@ -67,20 +67,20 @@ export const exportBookingsToPDF = (bookings, siteName, siteId) => {
       fillColor: [249, 250, 251] // Light gray
     },
     columnStyles: {
-      0: { halign: 'center', cellWidth: 12 }, // #
-      1: { cellWidth: 20 }, // Vehicle No.
-      2: { cellWidth: 25 }, // Customer
-      3: { cellWidth: 20 }, // Phone
-      4: { cellWidth: 18 }, // Vehicle Type
-      5: { cellWidth: 15 }, // Machine
-      6: { cellWidth: 15 }, // Pallet
-      7: { halign: 'center', cellWidth: 15 }, // Status
-      8: { cellWidth: 15 }, // Payment
-      9: { halign: 'right', cellWidth: 18 }, // Amount
-      10: { cellWidth: 20 }, // Date
-      11: { cellWidth: 20 } // Time
+      0: { halign: 'center', cellWidth: 8 }, // #
+      1: { cellWidth: 18 }, // Vehicle No.
+      2: { cellWidth: 22 }, // Customer
+      3: { cellWidth: 18 }, // Phone
+      4: { cellWidth: 15 }, // Vehicle Type
+      5: { cellWidth: 12 }, // Machine
+      6: { cellWidth: 12 }, // Pallet
+      7: { halign: 'center', cellWidth: 12 }, // Status
+      8: { cellWidth: 12 }, // Payment
+      9: { halign: 'right', cellWidth: 15 }, // Amount
+      10: { cellWidth: 18 }, // Date
+      11: { cellWidth: 18 } // Time
     },
-    margin: { top: 58, left: 14, right: 14 },
+    margin: { top: 58, left: 10, right: 10 },
     pageBreak: 'auto',
     showHead: 'everyPage',
     didDrawPage: function (data) {
@@ -135,42 +135,71 @@ export const exportBookingsToPDF = (bookings, siteName, siteId) => {
   doc.text('Financial Summary:', 14, finalY + 35);
   
   doc.setFont('helvetica', 'normal');
-  doc.text(`Total Revenue: ${formatCurrency(totalRevenue)}`, 20, finalY + 45);
-  doc.text(`Average Revenue per Booking: ${formatCurrency(totalBookings > 0 ? totalRevenue / totalBookings : 0)}`, 20, finalY + 53);
+  doc.text(`Total Revenue: ₹${totalRevenue.toFixed(2)}`, 20, finalY + 45);
 
   // Booking statistics
   doc.setFont('helvetica', 'bold');
-  doc.text('Booking Statistics:', 14, finalY + 68);
+  doc.text('Booking Statistics:', 14, finalY + 60);
   
   doc.setFont('helvetica', 'normal');
-  doc.text(`Total Bookings: ${totalBookings}`, 20, finalY + 78);
-  doc.text(`Active Bookings: ${activeBookings}`, 20, finalY + 86);
-  doc.text(`Completed Bookings: ${completedBookings}`, 20, finalY + 94);
-  doc.text(`Cancelled/Deleted Bookings: ${cancelledBookings}`, 20, finalY + 102);
+  doc.text(`Total Bookings: ${String(totalBookings)}`, 20, finalY + 70);
+  doc.text(`Active Bookings: ${String(activeBookings)}`, 20, finalY + 78);
+  doc.text(`Completed Bookings: ${String(completedBookings)}`, 20, finalY + 86);
+  doc.text(`Cancelled/Deleted Bookings: ${String(cancelledBookings)}`, 20, finalY + 94);
 
-  // Payment method breakdown
-  doc.setFont('helvetica', 'bold');
-  doc.text('Payment Method Breakdown:', 14, finalY + 117);
-  
-  doc.setFont('helvetica', 'normal');
-  let yOffset = 127;
-  Object.entries(paymentBreakdown).forEach(([method, data]) => {
-    const methodName = method.charAt(0).toUpperCase() + method.slice(1);
-    doc.text(`${methodName}: ${data.count} bookings (${formatCurrency(data.amount)})`, 20, finalY + yOffset);
-    yOffset += 8;
-  });
-
-  // Vehicle type breakdown
-  doc.setFont('helvetica', 'bold');
-  doc.text('Vehicle Type Breakdown:', 14, finalY + yOffset + 10);
-  
-  doc.setFont('helvetica', 'normal');
-  yOffset += 20;
-  Object.entries(vehicleBreakdown).forEach(([type, count]) => {
-    const typeName = type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase());
-    doc.text(`${typeName}: ${count} bookings`, 20, finalY + yOffset);
-    yOffset += 8;
-  });
+  // Check if we need a new page
+  if (finalY + 130 > doc.internal.pageSize.height - 30) {
+    doc.addPage();
+    const newPageY = 20;
+    
+    // Payment method breakdown
+    doc.setFont('helvetica', 'bold');
+    doc.text('Payment Method Breakdown:', 14, newPageY);
+    
+    doc.setFont('helvetica', 'normal');
+    let yOffset = 10;
+    Object.entries(paymentBreakdown).forEach(([method, data]) => {
+      const methodName = method.charAt(0).toUpperCase() + method.slice(1);
+      doc.text(`${methodName}: ${String(data.count)} bookings (₹${data.amount.toFixed(2)})`, 20, newPageY + yOffset);
+      yOffset += 8;
+    });
+    
+    // Vehicle type breakdown
+    doc.setFont('helvetica', 'bold');
+    doc.text('Vehicle Type Breakdown:', 14, newPageY + yOffset + 10);
+    
+    doc.setFont('helvetica', 'normal');
+    yOffset += 20;
+    Object.entries(vehicleBreakdown).forEach(([type, count]) => {
+      const typeName = type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase());
+      doc.text(`${typeName}: ${String(count)} bookings`, 20, newPageY + yOffset);
+      yOffset += 8;
+    });
+  } else {
+    // Payment method breakdown
+    doc.setFont('helvetica', 'bold');
+    doc.text('Payment Method Breakdown:', 14, finalY + 109);
+    
+    doc.setFont('helvetica', 'normal');
+    let yOffset = 119;
+    Object.entries(paymentBreakdown).forEach(([method, data]) => {
+      const methodName = method.charAt(0).toUpperCase() + method.slice(1);
+      doc.text(`${methodName}: ${String(data.count)} bookings (₹${data.amount.toFixed(2)})`, 20, finalY + yOffset);
+      yOffset += 8;
+    });
+    
+    // Vehicle type breakdown
+    doc.setFont('helvetica', 'bold');
+    doc.text('Vehicle Type Breakdown:', 14, finalY + yOffset + 10);
+    
+    doc.setFont('helvetica', 'normal');
+    yOffset += 20;
+    Object.entries(vehicleBreakdown).forEach(([type, count]) => {
+      const typeName = type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase());
+      doc.text(`${typeName}: ${String(count)} bookings`, 20, finalY + yOffset);
+      yOffset += 8;
+    });
+  }
 
   // Footer
   const pageCount = doc.internal.getNumberOfPages();
