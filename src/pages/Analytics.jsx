@@ -65,13 +65,21 @@ const Analytics = () => {
         })
       ]);
 
-      setBookings(bookingsResponse.data?.bookings || []);
+      const fetchedBookings = bookingsResponse.data?.bookings || [];
+      setBookings(fetchedBookings);
       
       const dashboardData = dashboardResponse.data?.summary || {};
+      
+      // Calculate total revenue from actual bookings data (more accurate)
+      const calculatedRevenue = fetchedBookings.reduce((total, booking) => {
+        const amount = booking.payment?.amount || booking.totalAmount || 0;
+        return total + amount;
+      }, 0);
+      
       setAnalytics({
-        totalBookings: dashboardData.totalBookings || 0,
-        totalRevenue: dashboardData.totalRevenue || 0,
-        activeBookings: dashboardData.activeBookings || 0
+        totalBookings: dashboardData.totalBookings || fetchedBookings.length,
+        totalRevenue: calculatedRevenue || dashboardData.totalRevenue || 0,
+        activeBookings: dashboardData.activeBookings || fetchedBookings.filter(b => b.status === 'active').length
       });
 
     } catch (error) {
@@ -304,7 +312,8 @@ const Analytics = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {booking.totalAmount ? formatCurrency(booking.totalAmount) : formatCurrency(0)}
+                      {booking.payment?.amount ? formatCurrency(booking.payment.amount) : 
+                       booking.totalAmount ? formatCurrency(booking.totalAmount) : formatCurrency(0)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {new Date(booking.createdAt).toLocaleDateString()}<br />
