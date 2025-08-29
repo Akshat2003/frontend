@@ -267,17 +267,17 @@ const CustomerManagement = () => {
         </div>
 
         {loading ? (
-          <div className="p-8 flex justify-center">
+          <div className="p-6 md:p-8 flex justify-center">
             <LoadingSpinner />
           </div>
         ) : customers.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">
-            <Users className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+          <div className="p-6 md:p-8 text-center text-gray-500">
+            <Users className="h-10 w-10 md:h-12 md:w-12 mx-auto mb-4 text-gray-300" />
             <p>No customers found</p>
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="text-purple-600 hover:text-purple-700 mt-2"
+                className="text-purple-600 hover:text-purple-700 mt-2 text-sm"
               >
                 Clear search
               </button>
@@ -570,9 +570,9 @@ const CustomerManagement = () => {
         {selectedCustomer && (
           <div className="space-y-6">
             {/* Customer Info */}
-            <div className="bg-gray-50 p-4 rounded-lg">
+            <div className="bg-gray-50 p-3 md:p-4 rounded-lg">
               <h3 className="text-lg font-medium text-gray-900 mb-3">Customer Information</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 text-sm">
                 <div>
                   <span className="text-gray-600">Name:</span>
                   <p className="font-medium">{selectedCustomer.fullName}</p>
@@ -583,7 +583,7 @@ const CustomerManagement = () => {
                 </div>
                 <div>
                   <span className="text-gray-600">Email:</span>
-                  <p className="font-medium">{selectedCustomer.email || 'Not provided'}</p>
+                  <p className="font-medium break-words">{selectedCustomer.email || 'Not provided'}</p>
                 </div>
                 <div>
                   <span className="text-gray-600">Status:</span>
@@ -616,21 +616,23 @@ const CustomerManagement = () => {
                 <div className="space-y-2">
                   {customerVehicles.map((vehicle) => (
                     <div key={vehicle._id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-center space-x-3">
-                        <Car className="h-5 w-5 text-gray-400" />
-                        <div>
-                          <p className="font-medium">{vehicle.vehicleNumber}</p>
-                          <p className="text-sm text-gray-600">{vehicle.vehicleType}</p>
+                      <div className="flex items-center space-x-3 min-w-0 flex-1">
+                        <Car className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-medium truncate">{vehicle.vehicleNumber}</p>
+                          <p className="text-sm text-gray-600 capitalize">{vehicle.vehicleType?.replace('-', ' ')}</p>
                           {(vehicle.make || vehicle.model) && (
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-gray-500 truncate">
                               {vehicle.make} {vehicle.model}
                             </p>
                           )}
                         </div>
                       </div>
-                      <div className="text-sm text-gray-600">
-                        {vehicle.color}
-                      </div>
+                      {vehicle.color && (
+                        <div className="text-sm text-gray-600 ml-2 flex-shrink-0">
+                          {vehicle.color}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -646,12 +648,12 @@ const CustomerManagement = () => {
                 <div className="space-y-2">
                   {customerBookings.map((booking) => (
                     <div key={booking._id} className="p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium">{booking.bookingNumber}</p>
-                          <p className="text-sm text-gray-600">{booking.vehicleNumber} - {booking.machineNumber}</p>
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium truncate">{booking.bookingNumber}</p>
+                          <p className="text-sm text-gray-600 truncate">{booking.vehicleNumber} - {booking.machineNumber}</p>
                         </div>
-                        <div className="text-right text-sm">
+                        <div className="flex items-center justify-between sm:flex-col sm:items-end text-sm">
                           <p className={`font-medium ${
                             booking.status === 'active' ? 'text-green-600' :
                             booking.status === 'completed' ? 'text-blue-600' :
