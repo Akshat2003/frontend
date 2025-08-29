@@ -235,15 +235,21 @@ const Analytics = () => {
         <div className="space-y-3">
           <div className="flex items-center justify-between py-2 border-b border-gray-100">
             <span className="text-sm text-gray-600">Peak Hour</span>
-            <span className="font-medium text-gray-900">2:00 PM - 4:00 PM</span>
+            <span className="font-medium text-gray-900">
+              {analytics.peakHour ? `${analytics.peakHour}:00` : 'No data'}
+            </span>
           </div>
           <div className="flex items-center justify-between py-2 border-b border-gray-100">
             <span className="text-sm text-gray-600">Avg Duration</span>
-            <span className="font-medium text-gray-900">2h 30m</span>
+            <span className="font-medium text-gray-900">
+              {analytics.averageDuration || 'No data'}
+            </span>
           </div>
           <div className="flex items-center justify-between py-2">
             <span className="text-sm text-gray-600">Occupancy Rate</span>
-            <span className="font-medium text-green-600">78%</span>
+            <span className="font-medium text-green-600">
+              {analytics.occupancyRate ? `${Math.round(analytics.occupancyRate)}%` : 'No data'}
+            </span>
           </div>
         </div>
       </div>
