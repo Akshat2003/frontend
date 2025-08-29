@@ -7,11 +7,14 @@ import {
   AlertCircle,
   RefreshCw,
   Eye,
-  Search
+  Search,
+  CheckCircle,
+  Download
 } from 'lucide-react';
 import BookingInfoModal from '../components/Booking/BookingInfoModal';
 import Button from '../components/Common/Button';
 import { formatCurrency } from '../utils/calculations';
+import { exportBookingsToPDF } from '../utils/pdfExport';
 import apiService from '../services/api';
 import { useSite } from '../contexts/SiteContext';
 
@@ -25,13 +28,15 @@ const Analytics = () => {
   const [analytics, setAnalytics] = useState({
     totalBookings: 0,
     totalRevenue: 0,
-    activeBookings: 0
+    activeBookings: 0,
+    completedBookings: 0
   });
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [exportLoading, setExportLoading] = useState(false);
 
   const { currentSite } = useSite();
 
@@ -71,8 +76,14 @@ const Analytics = () => {
       
       const dashboardData = dashboardResponse.data?.summary || {};
       
-      // Calculate total revenue from actual bookings data (exclude membership payments)
-      const calculatedRevenue = fetchedBookings.reduce((total, booking) => {
+      // Filter bookings based on payment method filter for analytics calculation
+      const filteredBookingsForAnalytics = fetchedBookings.filter(booking => {
+        if (paymentMethodFilter === 'all') return true;
+        return (booking.payment?.method === paymentMethodFilter || booking.paymentMethod === paymentMethodFilter);
+      });
+      
+      // Calculate metrics from filtered bookings
+      const calculatedRevenue = filteredBookingsForAnalytics.reduce((total, booking) => {
         // Skip membership payments as they are free (no revenue)
         if (booking.payment?.method === 'membership' || booking.paymentMethod === 'membership') {
           return total;
@@ -82,9 +93,10 @@ const Analytics = () => {
       }, 0);
       
       setAnalytics({
-        totalBookings: dashboardData.totalBookings || fetchedBookings.length,
-        totalRevenue: calculatedRevenue || dashboardData.totalRevenue || 0,
-        activeBookings: dashboardData.activeBookings || fetchedBookings.filter(b => b.status === 'active').length
+        totalBookings: filteredBookingsForAnalytics.length,
+        totalRevenue: calculatedRevenue,
+        activeBookings: filteredBookingsForAnalytics.filter(b => b.status === 'active').length,
+        completedBookings: filteredBookingsForAnalytics.filter(b => b.status === 'completed').length
       });
 
     } catch (error) {
@@ -107,6 +119,48 @@ const Analytics = () => {
   const handleCloseInfoModal = () => {
     setIsInfoModalOpen(false);
     setSelectedBooking(null);
+  };
+
+  const handleExport = async () => {
+    if (!currentSite?._id && !currentSite?.siteId) {
+      setError('No site selected for export');
+      return;
+    }
+
+    setExportLoading(true);
+    setError(null);
+
+    try {
+      const siteId = currentSite?._id || currentSite?.siteId;
+      
+      // Fetch all bookings for the site (no date or payment filter)
+      const response = await apiService.getBookings({
+        siteId,
+        limit: 10000, // Get all bookings
+        sortBy: 'createdAt',
+        sortOrder: 'desc'
+      });
+
+      const allBookings = response.data?.bookings || [];
+      
+      if (allBookings.length === 0) {
+        setError('No bookings found for this site');
+        return;
+      }
+
+      // Export to PDF
+      exportBookingsToPDF(
+        allBookings, 
+        currentSite?.siteName || 'Unknown Site',
+        currentSite?.siteId || currentSite?._id || 'Unknown'
+      );
+
+    } catch (error) {
+      console.error('Export failed:', error);
+      setError(error.message || 'Failed to export data');
+    } finally {
+      setExportLoading(false);
+    }
   };
 
   // Filter bookings based on search term and payment method
@@ -143,11 +197,29 @@ const Analytics = () => {
   return (
     <div className="p-4 md:p-6 space-y-4 md:space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Analytics</h1>
-        <p className="text-gray-600">
-          Site: {currentSite?.siteName || 'No site selected'}
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Analytics</h1>
+          <p className="text-gray-600">
+            Site: {currentSite?.siteName || 'No site selected'}
+          </p>
+        </div>
+        <div className="flex-shrink-0">
+          <Button
+            onClick={handleExport}
+            disabled={exportLoading || !currentSite}
+            className="bg-green-600 hover:bg-green-700 text-white"
+          >
+            {exportLoading ? (
+              <RefreshCw className="animate-spin" size={16} />
+            ) : (
+              <Download size={16} />
+            )}
+            <span className="ml-2">
+              {exportLoading ? 'Exporting...' : 'Export PDF'}
+            </span>
+          </Button>
+        </div>
       </div>
 
       {/* Date Range Picker & Filters */}
@@ -205,40 +277,54 @@ const Analytics = () => {
         </div>
       </div>
 
-      {/* Quick Insights */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 md:p-6">
-          <div className="flex items-center space-x-3">
-            <div className="bg-purple-100 p-2 md:p-3 rounded-lg flex-shrink-0">
-              <BarChart3 className="text-purple-600" size={20} />
+      {/* Quick Insights - 2x2 Grid */}
+      <div className="grid grid-cols-2 gap-3 md:gap-4">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 md:p-4">
+          <div className="flex items-center space-x-2 md:space-x-3">
+            <div className="bg-purple-100 p-2 rounded-lg flex-shrink-0">
+              <BarChart3 className="text-purple-600" size={16} />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm text-gray-600">Total Bookings</p>
-              <p className="text-xl md:text-2xl font-bold text-gray-900">{analytics.totalBookings}</p>
+              <p className="text-xs md:text-sm text-gray-600">Total Bookings</p>
+              <p className="text-lg md:text-xl font-bold text-gray-900">{analytics.totalBookings}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 md:p-6">
-          <div className="flex items-center space-x-3">
-            <div className="bg-green-100 p-2 md:p-3 rounded-lg flex-shrink-0">
-              <DollarSign className="text-green-600" size={20} />
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 md:p-4">
+          <div className="flex items-center space-x-2 md:space-x-3">
+            <div className="bg-green-100 p-2 rounded-lg flex-shrink-0">
+              <DollarSign className="text-green-600" size={16} />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm text-gray-600">Total Revenue</p>
-              <p className="text-xl md:text-2xl font-bold text-gray-900">{formatCurrency(analytics.totalRevenue)}</p>
+              <p className="text-xs md:text-sm text-gray-600">Total Revenue</p>
+              <p className="text-sm md:text-lg font-bold text-gray-900 break-words">
+                {formatCurrency(analytics.totalRevenue)}
+              </p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 md:p-6 sm:col-span-2 lg:col-span-1">
-          <div className="flex items-center space-x-3">
-            <div className="bg-blue-100 p-2 md:p-3 rounded-lg flex-shrink-0">
-              <Activity className="text-blue-600" size={20} />
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 md:p-4">
+          <div className="flex items-center space-x-2 md:space-x-3">
+            <div className="bg-blue-100 p-2 rounded-lg flex-shrink-0">
+              <Activity className="text-blue-600" size={16} />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm text-gray-600">Active Bookings</p>
-              <p className="text-xl md:text-2xl font-bold text-gray-900">{analytics.activeBookings}</p>
+              <p className="text-xs md:text-sm text-gray-600">Active Bookings</p>
+              <p className="text-lg md:text-xl font-bold text-gray-900">{analytics.activeBookings}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 md:p-4">
+          <div className="flex items-center space-x-2 md:space-x-3">
+            <div className="bg-orange-100 p-2 rounded-lg flex-shrink-0">
+              <CheckCircle className="text-orange-600" size={16} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs md:text-sm text-gray-600">Completed Bookings</p>
+              <p className="text-lg md:text-xl font-bold text-gray-900">{analytics.completedBookings}</p>
             </div>
           </div>
         </div>

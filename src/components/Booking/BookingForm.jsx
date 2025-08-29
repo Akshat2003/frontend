@@ -239,26 +239,28 @@ const BookingForm = ({ onBookingComplete }) => {
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 space-y-6">
+    <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 space-y-4">
       {/* Header */}
-      <div className="text-center">
-        <div className="bg-purple-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3">
-          <Plus className="text-purple-600" size={24} />
+      <div className="flex items-center space-x-3 pb-2 border-b border-gray-100">
+        <div className="bg-purple-100 w-8 h-8 rounded-full flex items-center justify-center">
+          <Plus className="text-purple-600" size={16} />
         </div>
-        <h2 className="text-xl font-semibold text-gray-900">Create New Booking</h2>
-        <p className="text-sm text-gray-600 mt-1">Register a new parking session</p>
+        <div className="flex-1">
+          <h2 className="text-lg font-semibold text-gray-900">Create New Booking</h2>
+          <p className="text-xs text-gray-500">Register a new parking session</p>
+        </div>
         
-        {/* Site Selection Status */}
+        {/* Site Selection Status - Compact */}
         {currentSite ? (
-          <div className="bg-green-50 border border-green-200 rounded-lg p-3 mt-4">
-            <p className="text-sm text-green-700">
-              <strong>Selected Site:</strong> {currentSite.siteName || currentSite.siteId}
+          <div className="bg-green-50 border border-green-200 rounded px-2 py-1">
+            <p className="text-xs text-green-700">
+              <strong>{currentSite.siteName || currentSite.siteId}</strong>
             </p>
           </div>
         ) : (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-3 mt-4">
-            <p className="text-sm text-red-700">
-              <strong>No site selected.</strong> Please select a parking site from the header dropdown.
+          <div className="bg-red-50 border border-red-200 rounded px-2 py-1">
+            <p className="text-xs text-red-700">
+              <strong>No site selected</strong>
             </p>
           </div>
         )}
