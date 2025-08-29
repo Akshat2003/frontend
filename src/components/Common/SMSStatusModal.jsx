@@ -148,7 +148,7 @@ const SMSStatusModal = ({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Send SMS Notification" size="small">
-      <div className="p-2 sm:p-4">
+      <div>
         {/* Booking Details Summary (if provided) */}
         {bookingDetails && (
           <div className="bg-gray-50 rounded-lg p-3 sm:p-4 mb-4 sm:mb-6">
