@@ -56,7 +56,9 @@ const BookingInfoModal = ({ booking, isOpen, onClose }) => {
 
   const duration = booking.endTime 
     ? formatDuration(booking.startTime, booking.endTime)
-    : formatDuration(booking.startTime);
+    : booking.startTime 
+    ? formatDuration(booking.startTime)
+    : 'N/A';
 
   return (
     <Modal
@@ -88,7 +90,7 @@ const BookingInfoModal = ({ booking, isOpen, onClose }) => {
               </div>
               <div className="text-xs text-gray-500 mt-2 flex items-center justify-end space-x-1">
                 <Badge size={12} />
-                <span>ID: {booking.id.slice(-8)}</span>
+                <span>ID: {(booking._id || booking.id || '').slice(-8) || 'N/A'}</span>
               </div>
             </div>
           </div>
@@ -129,7 +131,7 @@ const BookingInfoModal = ({ booking, isOpen, onClose }) => {
                 {booking.vehicleType === 'two-wheeler' ? <Bike className="text-gray-500" size={16} /> : <Car className="text-gray-500" size={16} />}
                 <span className="text-sm text-gray-600">Vehicle Type</span>
               </div>
-              <p className="font-semibold text-gray-900 capitalize">{booking.vehicleType.replace('-', ' ')}</p>
+              <p className="font-semibold text-gray-900 capitalize">{booking.vehicleType?.replace('-', ' ') || 'N/A'}</p>
             </div>
           </div>
         </div>
@@ -148,7 +150,7 @@ const BookingInfoModal = ({ booking, isOpen, onClose }) => {
                 <Wrench className="text-gray-500" size={16} />
                 <span className="text-sm text-gray-600">Machine Number</span>
               </div>
-              <p className="font-semibold text-gray-900">{booking.machineNumber}</p>
+              <p className="font-semibold text-gray-900">{booking.machineNumber || 'N/A'}</p>
             </div>
             <div className="bg-white rounded-lg p-4">
               <div className="flex items-center space-x-2 mb-2">
@@ -171,7 +173,7 @@ const BookingInfoModal = ({ booking, isOpen, onClose }) => {
                 <Info className="text-gray-500" size={16} />
                 <span className="text-sm text-gray-600">Booking ID</span>
               </div>
-              <p className="font-mono text-gray-900 text-sm">{booking.id}</p>
+              <p className="font-mono text-gray-900 text-sm">{booking._id || booking.id || 'N/A'}</p>
             </div>
           </div>
         </div>
