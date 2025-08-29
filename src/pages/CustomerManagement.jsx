@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Eye, Edit2, Trash2, Car, CreditCard, ChevronLeft, ChevronRight, Users, UserPlus, Filter } from 'lucide-react';
+import { Search, Plus, Eye, Edit2, Trash2, Car, CreditCard, ChevronLeft, ChevronRight, Users, UserPlus, Filter, Phone, Mail, MoreVertical } from 'lucide-react';
 import { useCustomers } from '../hooks/useCustomers';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 import Modal from '../components/Common/Modal';
@@ -285,82 +285,193 @@ const CustomerManagement = () => {
           </div>
         ) : (
           <>
+            {/* Mobile-First Customer Cards */}
             <div className="divide-y divide-gray-200">
               {customers.map((customer) => (
-                <div key={customer._id} className="p-4 hover:bg-gray-50">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
-                          <span className="text-purple-600 font-semibold">
+                <div key={customer._id} className="p-3 sm:p-4 hover:bg-gray-50 transition-colors">
+                  {/* Mobile Layout */}
+                  <div className="block sm:hidden">
+                    <div className="flex items-start space-x-3">
+                      <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-purple-600 font-semibold text-sm">
+                          {customer.firstName[0]}{customer.lastName[0]}
+                        </span>
+                      </div>
+                      
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-base font-semibold text-gray-900 truncate">
+                              {customer.fullName}
+                            </h3>
+                            <div className="mt-1 space-y-1">
+                              <div className="flex items-center text-sm text-gray-600">
+                                <Phone className="h-3 w-3 mr-2 flex-shrink-0" />
+                                <span className="truncate">{customer.phoneNumber}</span>
+                              </div>
+                              {customer.email && (
+                                <div className="flex items-center text-sm text-gray-600">
+                                  <Mail className="h-3 w-3 mr-2 flex-shrink-0" />
+                                  <span className="truncate">{customer.email}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          
+                          {/* Mobile Actions Dropdown */}
+                          <div className="relative ml-2">
+                            <Button
+                              onClick={() => handleViewDetails(customer)}
+                              variant="outline"
+                              size="sm"
+                              className="p-1.5"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                        
+                        {/* Mobile Bottom Row */}
+                        <div className="mt-2 flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div className="flex items-center text-xs text-gray-500">
+                              <Car className="h-3 w-3 mr-1" />
+                              <span>{customer.vehicles?.length || 0}</span>
+                            </div>
+                            {customer.hasMembership && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                <CreditCard className="h-2.5 w-2.5 mr-1" />
+                                Member
+                              </span>
+                            )}
+                          </div>
+                          
+                          <div className="flex items-center space-x-1">
+                            <Button
+                              onClick={() => {
+                                setSelectedCustomer(customer);
+                                setShowEditModal(true);
+                              }}
+                              variant="outline"
+                              size="sm"
+                              className="p-1.5"
+                            >
+                              <Edit2 className="h-3 w-3" />
+                            </Button>
+                            
+                            <Button
+                              onClick={() => {
+                                setSelectedCustomer(customer);
+                                setShowMembershipModal(true);
+                              }}
+                              variant="outline"
+                              size="sm"
+                              className="p-1.5"
+                              title="Manage Membership"
+                            >
+                              <CreditCard className="h-3 w-3" />
+                            </Button>
+                            
+                            <Button
+                              onClick={() => {
+                                setSelectedCustomer(customer);
+                                setShowDeleteModal(true);
+                              }}
+                              variant="outline"
+                              size="sm"
+                              className="p-1.5 text-red-600 hover:bg-red-50 border-red-200"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Desktop Layout */}
+                  <div className="hidden sm:block">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-4 flex-1 min-w-0">
+                        <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0">
+                          <span className="text-purple-600 font-semibold text-sm">
                             {customer.firstName[0]}{customer.lastName[0]}
                           </span>
                         </div>
                         
-                        <div className="flex-1">
-                          <h3 className="text-lg font-medium text-gray-900">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-lg font-medium text-gray-900 truncate">
                             {customer.fullName}
                           </h3>
-                          <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 text-sm text-gray-600">
-                            <span>📞 {customer.phoneNumber}</span>
-                            {customer.email && <span>✉️ {customer.email}</span>}
-                            <span className="flex items-center space-x-1">
-                              <Car className="h-4 w-4" />
+                          <div className="flex items-center space-x-4 mt-1 text-sm text-gray-600">
+                            <div className="flex items-center">
+                              <Phone className="h-4 w-4 mr-1.5" />
+                              <span>{customer.phoneNumber}</span>
+                            </div>
+                            {customer.email && (
+                              <div className="flex items-center">
+                                <Mail className="h-4 w-4 mr-1.5" />
+                                <span className="truncate max-w-40">{customer.email}</span>
+                              </div>
+                            )}
+                            <div className="flex items-center">
+                              <Car className="h-4 w-4 mr-1.5" />
                               <span>{customer.vehicles?.length || 0} vehicles</span>
-                            </span>
+                            </div>
                             {customer.hasMembership && (
                               <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                 <CreditCard className="h-3 w-3 mr-1" />
-                                Active Membership
+                                Active Member
                               </span>
                             )}
                           </div>
                         </div>
                       </div>
-                    </div>
-                    
-                    <div className="flex items-center space-x-2">
-                      <Button
-                        onClick={() => handleViewDetails(customer)}
-                        variant="outline"
-                        size="sm"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
                       
-                      <Button
-                        onClick={() => {
-                          setSelectedCustomer(customer);
-                          setShowEditModal(true);
-                        }}
-                        variant="outline"
-                        size="sm"
-                      >
-                        <Edit2 className="h-4 w-4" />
-                      </Button>
-                      
-                      <Button
-                        onClick={() => {
-                          setSelectedCustomer(customer);
-                          setShowMembershipModal(true);
-                        }}
-                        variant="outline"
-                        size="sm"
-                        title="Manage Membership"
-                      >
-                        <CreditCard className="h-4 w-4" />
-                      </Button>
-                      
-                      <Button
-                        onClick={() => {
-                          setSelectedCustomer(customer);
-                          setShowDeleteModal(true);
-                        }}
-                        variant="danger"
-                        size="sm"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center space-x-2 ml-4">
+                        <Button
+                          onClick={() => handleViewDetails(customer)}
+                          variant="outline"
+                          size="sm"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        
+                        <Button
+                          onClick={() => {
+                            setSelectedCustomer(customer);
+                            setShowEditModal(true);
+                          }}
+                          variant="outline"
+                          size="sm"
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </Button>
+                        
+                        <Button
+                          onClick={() => {
+                            setSelectedCustomer(customer);
+                            setShowMembershipModal(true);
+                          }}
+                          variant="outline"
+                          size="sm"
+                          title="Manage Membership"
+                        >
+                          <CreditCard className="h-4 w-4" />
+                        </Button>
+                        
+                        <Button
+                          onClick={() => {
+                            setSelectedCustomer(customer);
+                            setShowDeleteModal(true);
+                          }}
+                          variant="outline"
+                          size="sm"
+                          className="text-red-600 hover:bg-red-50 border-red-200"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </div>
