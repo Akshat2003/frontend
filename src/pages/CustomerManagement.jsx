@@ -55,6 +55,7 @@ const CustomerManagement = () => {
     color: ''
   });
   const [deleteReason, setDeleteReason] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Load customers on mount
   useEffect(() => {
@@ -123,14 +124,19 @@ const CustomerManagement = () => {
   };
 
   const handleDeleteCustomer = async () => {
+    setIsDeleting(true);
     try {
       await deleteCustomer(selectedCustomer._id, deleteReason);
       setShowDeleteModal(false);
       setSelectedCustomer(null);
       setDeleteReason('');
       handleLoadCustomers();
+      alert('Customer deleted successfully');
     } catch (error) {
       console.error('Failed to delete customer:', error);
+      alert('Failed to delete customer: ' + (error.message || 'Unknown error occurred'));
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -634,7 +640,7 @@ const CustomerManagement = () => {
       {/* Delete Customer Modal */}
       <Modal 
         isOpen={showDeleteModal} 
-        onClose={() => setShowDeleteModal(false)}
+        onClose={() => !isDeleting && setShowDeleteModal(false)}
         title="Delete Customer"
       >
         {selectedCustomer && (
@@ -654,17 +660,25 @@ const CustomerManagement = () => {
             <div className="flex justify-end space-x-3 pt-4">
               <Button
                 type="button"
-                onClick={() => setShowDeleteModal(false)}
+                onClick={() => !isDeleting && setShowDeleteModal(false)}
                 variant="outline"
+                disabled={isDeleting}
               >
                 Cancel
               </Button>
               <Button
                 onClick={handleDeleteCustomer}
                 variant="danger"
-                disabled={loading}
+                disabled={isDeleting}
               >
-                {loading ? 'Deleting...' : 'Delete Customer'}
+                {isDeleting ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Deleting...
+                  </>
+                ) : (
+                  'Delete Customer'
+                )}
               </Button>
             </div>
           </div>

@@ -42,8 +42,9 @@ const BookingInfoModal = ({ booking, isOpen, onClose }) => {
       await deleteBooking(booking._id, deleteReason);
       setShowDeleteConfirm(false);
       onClose();
+      alert('Booking deleted successfully');
     } catch (error) {
-      alert('Failed to delete booking: ' + error.message);
+      alert('Failed to delete booking: ' + (error.message || 'Unknown error occurred'));
     } finally {
       setIsDeleting(false);
     }
