@@ -1,10 +1,13 @@
 import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import { formatCurrency } from './calculations';
 
 export const exportBookingsToPDF = (bookings, siteName, siteId) => {
   // Create new PDF document
   const doc = new jsPDF();
+  
+  // Variable to track table end position
+  let tableEndY = 58;
   
   // Set document properties
   doc.setProperties({
@@ -47,7 +50,7 @@ export const exportBookingsToPDF = (bookings, siteName, siteId) => {
   ];
 
   // Generate table
-  doc.autoTable({
+  autoTable(doc, {
     head: headers,
     body: tableData,
     startY: 58,
@@ -79,7 +82,10 @@ export const exportBookingsToPDF = (bookings, siteName, siteId) => {
     },
     margin: { top: 58, left: 14, right: 14 },
     pageBreak: 'auto',
-    showHead: 'everyPage'
+    showHead: 'everyPage',
+    didDrawPage: function (data) {
+      tableEndY = data.cursor.y;
+    }
   });
 
   // Calculate summary statistics
@@ -116,7 +122,7 @@ export const exportBookingsToPDF = (bookings, siteName, siteId) => {
   }, {});
 
   // Add summary section
-  const finalY = doc.lastAutoTable.finalY || 58;
+  const finalY = tableEndY;
   
   // Summary title
   doc.setFontSize(16);
