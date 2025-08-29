@@ -116,9 +116,9 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
           validCustomer = response.data.customer;
           setValidatedCustomer(validCustomer);
           
-          // Apply 10% membership discount
-          membershipDiscount = Math.round(parkingFee * 0.1);
-          finalAmount = parkingFee - membershipDiscount;
+          // Apply 100% membership discount (free parking for members)
+          membershipDiscount = parkingFee;
+          finalAmount = 0;
           
         } catch (error) {
           console.error('Membership validation failed:', error);
@@ -346,8 +346,8 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
               <QrCode className={`${paymentMethod === 'upi' ? 'text-blue-600' : 'text-gray-600'}`} size={20} />
             </div>
             <div>
-              <h5 className="font-semibold text-gray-900">UPI Payment</h5>
-              <p className="text-sm text-gray-600">Customer pays via UPI QR code</p>
+              <h5 className="font-semibold text-gray-900">UPI/Online Payment</h5>
+              <p className="text-sm text-gray-600">Customer pays via UPI QR code or online</p>
             </div>
             {paymentMethod === 'upi' && (
               <div className="ml-auto">
@@ -372,7 +372,7 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
             </div>
             <div>
               <h5 className="font-semibold text-gray-900">Membership Card</h5>
-              <p className="text-sm text-gray-600">Use membership card with 10% discount</p>
+              <p className="text-sm text-gray-600">Free parking for members (100% discount)</p>
             </div>
             {paymentMethod === 'membership' && (
               <div className="ml-auto">
@@ -420,8 +420,8 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
               <div className="flex items-center space-x-2">
                 <CheckCircle className="text-green-600" size={16} />
                 <div className="text-sm text-green-800">
-                  <p className="font-semibold">Membership discount: 10% off</p>
-                  <p>Final amount: {formatCurrency(Math.round(parkingFee * 0.9))}</p>
+                  <p className="font-semibold">Membership discount: 100% off (FREE)</p>
+                  <p>Final amount: {formatCurrency(0)}</p>
                 </div>
               </div>
             </div>
@@ -486,7 +486,7 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
             </div>
             <p className="text-sm text-green-700">
               {paymentMethod === 'membership' 
-                ? `Membership payment processed. Discounted amount: ${formatCurrency(parkingFee - Math.round(parkingFee * 0.1))}`
+                ? `Membership payment processed. FREE parking for member!`
                 : `${paymentMethod.toUpperCase()} payment of ${formatCurrency(parkingFee)} collected successfully.`
               }
             </p>
@@ -496,7 +496,7 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
                   Customer: {validatedCustomer.fullName} ({validatedCustomer.phoneNumber})
                 </p>
                 <p className="text-xs text-green-600">
-                  Discount applied: {formatCurrency(Math.round(parkingFee * 0.1))}
+                  Discount applied: {formatCurrency(parkingFee)}
                 </p>
               </div>
             )}
