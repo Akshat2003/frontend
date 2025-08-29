@@ -20,6 +20,7 @@ const Analytics = () => {
     startDate: new Date().toISOString().split('T')[0], // Today
     endDate: new Date().toISOString().split('T')[0]     // Today
   });
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState('all');
   const [bookings, setBookings] = useState([]);
   const [analytics, setAnalytics] = useState({
     totalBookings: 0,
@@ -39,7 +40,7 @@ const Analytics = () => {
     if (currentSite?._id || currentSite?.siteId) {
       fetchAnalyticsData();
     }
-  }, [dateRange, currentSite]);
+  }, [dateRange, paymentMethodFilter, currentSite]);
 
   const fetchAnalyticsData = async () => {
     setLoading(true);
@@ -70,8 +71,12 @@ const Analytics = () => {
       
       const dashboardData = dashboardResponse.data?.summary || {};
       
-      // Calculate total revenue from actual bookings data (more accurate)
+      // Calculate total revenue from actual bookings data (exclude membership payments)
       const calculatedRevenue = fetchedBookings.reduce((total, booking) => {
+        // Skip membership payments as they are free (no revenue)
+        if (booking.payment?.method === 'membership' || booking.paymentMethod === 'membership') {
+          return total;
+        }
         const amount = booking.payment?.amount || booking.totalAmount || 0;
         return total + amount;
       }, 0);
@@ -104,13 +109,23 @@ const Analytics = () => {
     setSelectedBooking(null);
   };
 
-  // Filter bookings based on search term
-  const filteredBookings = bookings.filter(booking =>
-    booking.vehicleNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    booking.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    booking.phoneNumber?.includes(searchTerm) ||
-    booking.machineNumber?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Filter bookings based on search term and payment method
+  const filteredBookings = bookings.filter(booking => {
+    // Search filter
+    const matchesSearch = !searchTerm || (
+      booking.vehicleNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      booking.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      booking.phoneNumber?.includes(searchTerm) ||
+      booking.machineNumber?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+    
+    // Payment method filter
+    const matchesPaymentMethod = paymentMethodFilter === 'all' || 
+      booking.payment?.method === paymentMethodFilter || 
+      booking.paymentMethod === paymentMethodFilter;
+    
+    return matchesSearch && matchesPaymentMethod;
+  });
 
   const getStatusBadgeClass = (status) => {
     switch (status) {
@@ -135,7 +150,7 @@ const Analytics = () => {
         </p>
       </div>
 
-      {/* Date Range Picker */}
+      {/* Date Range Picker & Filters */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center space-x-2">
@@ -156,6 +171,19 @@ const Analytics = () => {
               onChange={(e) => handleDateRangeChange('endDate', e.target.value)}
               className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
+          </div>
+          <div className="flex items-center space-x-2">
+            <span className="text-sm font-medium text-gray-700">Payment Method:</span>
+            <select
+              value={paymentMethodFilter}
+              onChange={(e) => setPaymentMethodFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+            >
+              <option value="all">All Methods</option>
+              <option value="cash">Cash</option>
+              <option value="upi">UPI/Online</option>
+              <option value="membership">Membership Card</option>
+            </select>
           </div>
           <Button
             onClick={fetchAnalyticsData}
