@@ -1,24 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Search, User, Car, Bike, Wrench, Hash, Smartphone, Plus, CheckCircle, ChevronDown } from 'lucide-react';
+import { User, Car, Bike, Wrench, Hash, Smartphone, CheckCircle } from 'lucide-react';
 import Input from '../Common/Input';
 import Select from '../Common/Select';
 import Button from '../Common/Button';
+import SMSStatusModal from '../Common/SMSStatusModal';
 import { useBookings } from '../../hooks/useBookings';
-import { useCustomers } from '../../hooks/useCustomers';
 import { useMachines } from '../../hooks/useMachines';
 import { useSite } from '../../contexts/SiteContext';
-import { generateOTP, generateSMSMessage, openSMSApp } from '../../utils/smsUtils';
+import { generateOTP, generateSMSMessage, openSMSAppSimple } from '../../utils/smsUtils';
 
 const BookingForm = ({ onBookingComplete }) => {
-  const [showCustomerSearch, setShowCustomerSearch] = useState(false);
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
   const [customerData, setCustomerData] = useState({
     phoneNumber: '',
     customerName: '',
     vehicleNumber: '',
-    email: '',
-    notes: '',
   });
   const [bookingData, setBookingData] = useState({
     vehicleType: '',
@@ -27,9 +22,11 @@ const BookingForm = ({ onBookingComplete }) => {
   });
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showSMSModal, setShowSMSModal] = useState(false);
+  const [completedBooking, setCompletedBooking] = useState(null);
+  const [smsMessage, setSMSMessage] = useState('');
 
   const { createBooking, loading } = useBookings();
-  const { findCustomerByPhone } = useCustomers();
   const { currentSite } = useSite();
   const { 
     availableMachines, 
@@ -126,37 +123,6 @@ const BookingForm = ({ onBookingComplete }) => {
     });
   };
 
-  const handleSearch = () => {
-    if (!phoneNumber.trim()) return;
-
-    setIsSearching(true);
-    
-    setTimeout(() => {
-      const customer = findCustomerByPhone(phoneNumber);
-      
-      if (customer) {
-        setCustomerData({
-          phoneNumber: customer.phoneNumber,
-          customerName: customer.customerName,
-          vehicleNumber: customer.vehicleNumber || '',
-          email: customer.email || '',
-          notes: '',
-        });
-        setErrors({});
-      } else {
-        setCustomerData({
-          phoneNumber: phoneNumber,
-          customerName: '',
-          vehicleNumber: '',
-          email: '',
-          notes: '',
-        });
-      }
-      
-      setShowCustomerSearch(false);
-      setIsSearching(false);
-    }, 500);
-  };
 
   const validateForm = () => {
     const newErrors = {};
@@ -221,47 +187,47 @@ const BookingForm = ({ onBookingComplete }) => {
         bookingPayload.palletName = selectedPallet.customName;
       }
 
-      // Only add optional fields if they have values
-      if (customerData.email && customerData.email.trim()) {
-        bookingPayload.email = customerData.email.trim();
-      }
-      if (customerData.notes && customerData.notes.trim()) {
-        bookingPayload.notes = customerData.notes.trim();
-      }
 
       // Create booking via API
       const booking = await createBooking(bookingPayload);
 
       // Generate SMS message with the actual OTP from the booking response
-      const smsMessage = generateSMSMessage({
-        ...customerData,
-        ...bookingData,
+      const generatedSMSMessage = generateSMSMessage({
+        customerName: customerData.customerName,
+        vehicleNumber: customerData.vehicleNumber,
+        machineNumber: selectedMachine.machineNumber,
+        palletNumber: parseInt(bookingData.palletNumber),
+        palletName: selectedMachine.parkingType === 'puzzle' && selectedPallet?.customName 
+          ? selectedPallet.customName 
+          : null,
         otp: booking.otp.code,
+        vehicleType: bookingData.vehicleType,
         bookingNumber: booking.bookingNumber
       });
 
-      // Open SMS app
-      const smsOpened = openSMSApp(customerData.phoneNumber, smsMessage);
+      // Set booking and SMS data for modal
+      setCompletedBooking(booking);
+      setSMSMessage(generatedSMSMessage);
+      
+      // Show SMS modal
+      setShowSMSModal(true);
 
-      if (smsOpened || true) { // Always reset form even if SMS fails
-        // Reset form
-        setCustomerData({
-          phoneNumber: '',
-          customerName: '',
-          vehicleNumber: '',
-          email: '',
-          notes: '',
-        });
-        setBookingData({
-          vehicleType: '',
-          machineNumber: '',
-          palletNumber: '',
-        });
-        setPhoneNumber('');
-        setErrors({});
-        resetMachineStates(); // Reset machine states when form is cleared
-        onBookingComplete(booking);
-      }
+      // Reset form immediately after successful booking creation
+      setCustomerData({
+        phoneNumber: '',
+        customerName: '',
+        vehicleNumber: '',
+      });
+      setBookingData({
+        vehicleType: '',
+        machineNumber: '',
+        palletNumber: '',
+      });
+      setErrors({});
+      resetMachineStates(); // Reset machine states when form is cleared
+      
+      // Call onBookingComplete callback
+      onBookingComplete(booking);
     } catch (error) {
       console.error('Error creating booking:', error);
       
@@ -298,50 +264,6 @@ const BookingForm = ({ onBookingComplete }) => {
         )}
       </div>
 
-      {/* Optional Customer Search */}
-      <div className="border border-gray-200 rounded-lg p-4">
-        <button
-          type="button"
-          onClick={() => setShowCustomerSearch(!showCustomerSearch)}
-          className="flex items-center justify-between w-full text-left"
-        >
-          <div className="flex items-center space-x-2">
-            <Search className="text-gray-500" size={16} />
-            <span className="font-medium text-gray-700">Search Existing Customer (Optional)</span>
-          </div>
-          <ChevronDown 
-            className={`text-gray-400 transition-transform ${showCustomerSearch ? 'rotate-180' : ''}`} 
-            size={16} 
-          />
-        </button>
-        
-        {showCustomerSearch && (
-          <div className="mt-4 space-y-3">
-            <div className="flex space-x-2">
-              <div className="flex-1 relative">
-                <Smartphone className="absolute left-3 top-3 text-gray-400" size={16} />
-                <input
-                  type="tel"
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value)}
-                  placeholder="Enter phone number"
-                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                />
-              </div>
-              <Button
-                onClick={handleSearch}
-                disabled={!phoneNumber.trim() || isSearching}
-                variant="outline"
-              >
-                {isSearching ? 'Searching...' : 'Search'}
-              </Button>
-            </div>
-            <p className="text-xs text-gray-500">
-              Search to auto-fill customer details if they exist
-            </p>
-          </div>
-        )}
-      </div>
 
       {/* Booking Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -377,22 +299,6 @@ const BookingForm = ({ onBookingComplete }) => {
             placeholder="e.g., MH01AB1234"
           />
 
-          <Input
-            label="Email (Optional)"
-            type="email"
-            value={customerData.email}
-            onChange={(e) => setCustomerData(prev => ({ ...prev, email: e.target.value }))}
-            error={errors.email}
-            placeholder="customer@example.com"
-          />
-
-          <Input
-            label="Notes (Optional)"
-            value={customerData.notes}
-            onChange={(e) => setCustomerData(prev => ({ ...prev, notes: e.target.value }))}
-            error={errors.notes}
-            placeholder="Any additional notes"
-          />
         </div>
 
         {/* Vehicle & Parking Details */}
@@ -480,6 +386,23 @@ const BookingForm = ({ onBookingComplete }) => {
           )}
         </Button>
       </form>
+
+      {/* SMS Status Modal */}
+      {showSMSModal && completedBooking && (
+        <SMSStatusModal
+          isOpen={showSMSModal}
+          onClose={() => setShowSMSModal(false)}
+          phoneNumber={completedBooking.customerPhoneNumber || completedBooking.phoneNumber}
+          message={smsMessage}
+          bookingDetails={{
+            customerName: completedBooking.customerName,
+            vehicleNumber: completedBooking.vehicleNumber,
+            machineNumber: completedBooking.machineNumber,
+            otp: completedBooking.otp.code
+          }}
+          autoClose={true}
+        />
+      )}
     </div>
   );
 };
