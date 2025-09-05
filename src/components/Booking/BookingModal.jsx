@@ -47,12 +47,22 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
 
   // Fetch customer data when modal opens
   useEffect(() => {
-    const fetchCustomerData = async () => {
-      if (!booking?.customer) return;
-      
+    if (!isOpen || !booking) return;
+
+    const customerId = booking?.customer?._id || booking?.customer;
+    if (!customerId) {
+      console.log('No customer ID found in booking');
+      return;
+    }
+
+    console.log('Fetching customer data for ID:', customerId);
+
+    const fetchCustomerData = async () => {      
       setLoadingCustomer(true);
+      setErrors({});
+      
       try {
-        const response = await apiService.getCustomerById(booking.customer);
+        const response = await apiService.getCustomerById(customerId);
         setCustomerData(response.data.customer);
       } catch (error) {
         console.error('Error fetching customer data:', error);
@@ -62,10 +72,8 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
       }
     };
 
-    if (isOpen && booking?.customer) {
-      fetchCustomerData();
-    }
-  }, [isOpen, booking?.customer]);
+    fetchCustomerData();
+  }, [isOpen, booking?._id]); // Only depend on modal open state and booking ID
 
   // Check if customer has active membership
   const hasActiveMembership = customerData?.membership?.isActive && 
