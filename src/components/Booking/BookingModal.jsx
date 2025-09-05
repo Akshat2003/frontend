@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Car, 
   Bike, 
@@ -45,27 +45,27 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
   const duration = formatDuration(booking.startTime);
   const VehicleIcon = booking.vehicleType === 'two-wheeler' ? Bike : Car;
 
-  const fetchCustomerData = useCallback(async () => {
-    if (!booking?.customer) return;
-    
-    setLoadingCustomer(true);
-    try {
-      const response = await apiService.getCustomerById(booking.customer);
-      setCustomerData(response.data.customer);
-    } catch (error) {
-      console.error('Error fetching customer data:', error);
-      setErrors({ customer: 'Failed to load customer data' });
-    } finally {
-      setLoadingCustomer(false);
-    }
-  }, [booking?.customer]);
-
   // Fetch customer data when modal opens
   useEffect(() => {
+    const fetchCustomerData = async () => {
+      if (!booking?.customer) return;
+      
+      setLoadingCustomer(true);
+      try {
+        const response = await apiService.getCustomerById(booking.customer);
+        setCustomerData(response.data.customer);
+      } catch (error) {
+        console.error('Error fetching customer data:', error);
+        setErrors({ customer: 'Failed to load customer data' });
+      } finally {
+        setLoadingCustomer(false);
+      }
+    };
+
     if (isOpen && booking?.customer) {
       fetchCustomerData();
     }
-  }, [isOpen, booking?.customer, fetchCustomerData]);
+  }, [isOpen, booking?.customer]);
 
   // Check if customer has active membership
   const hasActiveMembership = customerData?.membership?.isActive && 
