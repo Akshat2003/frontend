@@ -182,16 +182,6 @@ const Login = ({ onLogin, onForgotPassword }) => {
               )}
             </Button>
           </form>
-
-          {/* Demo Credentials */}
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-            <p className="text-sm text-gray-600 mb-2 font-medium">Test Operator Credentials:</p>
-            <div className="space-y-1">
-              <p className="text-xs text-gray-500">ID: OP200</p>
-              <p className="text-xs text-gray-500">Password: TestOp@123</p>
-              <p className="text-xs text-gray-400">Site: Mumbai Central Mall</p>
-            </div>
-          </div>
         </div>
 
         {/* Footer */}
