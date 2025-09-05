@@ -9,11 +9,12 @@ const Navigation = ({ activeTab, setActiveTab, user }) => {
   const baseNavItems = [
     { id: 'bookings', label: 'Bookings', icon: Plus },
     { id: 'listings', label: 'Active', icon: Activity },
-    { id: 'settings', label: 'Settings', icon: Settings },
+    // { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
   // Admin-only items (shown in More menu)
   const adminNavItems = [
+    { id: 'settings', label: 'Settings', icon: Settings },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
     { id: 'customers', label: 'Customers', icon: Users },
     { id: 'sites', label: 'Sites', icon: Building },
