@@ -31,7 +31,7 @@ function App() {
         // Only render Analytics for admin users
         return user?.role === 'admin' ? <Analytics /> : <OnSpotBookings />;
       case 'settings':
-        return <Settings />;
+        return user?.role === 'admin' ? <Settings /> : <OnSpotBookings />;
       default:
         return <OnSpotBookings />;
     }
