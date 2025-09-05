@@ -415,7 +415,7 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
           <h5 className="font-semibold text-blue-900 mb-4">Show QR Code to Customer</h5>
           <div className="bg-white p-4 rounded-lg inline-block border-2 border-solid border-blue-300 shadow-sm">
             <img 
-              src="/PaymentQR.jpg" 
+              src="/PaymentQR.png" 
               alt="Payment QR Code" 
               className="w-48 h-48 object-contain rounded-lg"
               onError={(e) => {
