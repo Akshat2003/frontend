@@ -45,35 +45,27 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
   const duration = formatDuration(booking.startTime);
   const VehicleIcon = booking.vehicleType === 'two-wheeler' ? Bike : Car;
 
-  // Fetch customer data when modal opens
-  useEffect(() => {
-    if (!isOpen || !booking) return;
-
+  // Fetch customer data when payment method page is accessed
+  const fetchCustomerData = async () => {
     const customerId = booking?.customer?._id || booking?.customer;
     if (!customerId) {
       console.log('No customer ID found in booking');
       return;
     }
 
-    console.log('Fetching customer data for ID:', customerId);
-
-    const fetchCustomerData = async () => {      
-      setLoadingCustomer(true);
-      setErrors({});
-      
-      try {
-        const response = await apiService.getCustomerById(customerId);
-        setCustomerData(response.data.customer);
-      } catch (error) {
-        console.error('Error fetching customer data:', error);
-        setErrors({ customer: 'Failed to load customer data' });
-      } finally {
-        setLoadingCustomer(false);
-      }
-    };
-
-    fetchCustomerData();
-  }, [isOpen, booking?._id]); // Only depend on modal open state and booking ID
+    setLoadingCustomer(true);
+    setErrors({});
+    
+    try {
+      const response = await apiService.getCustomerById(customerId);
+      setCustomerData(response.data.customer);
+    } catch (error) {
+      console.error('Error fetching customer data:', error);
+      setErrors({ customer: 'Failed to load customer data' });
+    } finally {
+      setLoadingCustomer(false);
+    }
+  };
 
   // Check if customer has active membership
   const hasActiveMembership = customerData?.membership?.isActive && 
@@ -287,7 +279,10 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
           <Button variant="outline" onClick={handleClose} className="flex-1">
             Cancel
           </Button>
-          <Button onClick={() => setCurrentPage('payment')} className="flex-1">
+          <Button onClick={() => {
+            setCurrentPage('payment');
+            fetchCustomerData();
+          }} className="flex-1">
             <DollarSign size={16} className="mr-2" />
             Collect Payment
           </Button>
