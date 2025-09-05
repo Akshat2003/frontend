@@ -18,7 +18,7 @@ const Navigation = ({ activeTab, setActiveTab, user }) => {
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
     { id: 'customers', label: 'Customers', icon: Users },
     { id: 'sites', label: 'Sites', icon: Building },
-    { id: 'machines', label: 'Machines', icon: Cog },
+    { id: 'machines', label: 'Machines', icon: Cog }, 
   ];
 
   // Determine which items to show
