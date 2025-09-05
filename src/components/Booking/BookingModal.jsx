@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { 
   Car, 
   Bike, 
@@ -45,14 +45,9 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
   const duration = formatDuration(booking.startTime);
   const VehicleIcon = booking.vehicleType === 'two-wheeler' ? Bike : Car;
 
-  // Fetch customer data when modal opens
-  React.useEffect(() => {
-    if (isOpen && booking?.customer) {
-      fetchCustomerData();
-    }
-  }, [isOpen, booking?.customer]);
-
-  const fetchCustomerData = async () => {
+  const fetchCustomerData = useCallback(async () => {
+    if (!booking?.customer) return;
+    
     setLoadingCustomer(true);
     try {
       const response = await apiService.getCustomerById(booking.customer);
@@ -63,7 +58,14 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
     } finally {
       setLoadingCustomer(false);
     }
-  };
+  }, [booking?.customer]);
+
+  // Fetch customer data when modal opens
+  useEffect(() => {
+    if (isOpen && booking?.customer) {
+      fetchCustomerData();
+    }
+  }, [isOpen, booking?.customer, fetchCustomerData]);
 
   // Check if customer has active membership
   const hasActiveMembership = customerData?.membership?.isActive && 
@@ -408,12 +410,23 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
       {paymentMethod === 'upi' && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 text-center">
           <h5 className="font-semibold text-blue-900 mb-4">Show QR Code to Customer</h5>
-          <div className="bg-white p-6 rounded-lg inline-block border-2 border-dashed border-blue-300">
-            <div className="w-32 h-32 bg-gray-100 flex items-center justify-center rounded-lg">
+          <div className="bg-white p-4 rounded-lg inline-block border-2 border-solid border-blue-300 shadow-sm">
+            <img 
+              src="/PaymentQR.jpg" 
+              alt="Payment QR Code" 
+              className="w-48 h-48 object-contain rounded-lg"
+              onError={(e) => {
+                // Fallback to placeholder if image fails to load
+                e.target.style.display = 'none';
+                e.target.nextElementSibling.style.display = 'flex';
+              }}
+            />
+            <div className="w-48 h-48 bg-gray-100 flex items-center justify-center rounded-lg" style={{display: 'none'}}>
               <QrCode className="text-gray-400" size={48} />
             </div>
           </div>
           <p className="text-sm text-blue-700 mt-3 font-medium">Amount: {formatCurrency(parkingFee)}</p>
+          <p className="text-xs text-blue-600 mt-1">Scan this QR code to make payment</p>
         </div>
       )}
 
