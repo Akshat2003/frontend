@@ -28,9 +28,8 @@ import apiService from '../../services/api';
 const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
   const [currentPage, setCurrentPage] = useState('details');
   const [paymentMethod, setPaymentMethod] = useState('');
-  const [membershipNumber, setMembershipNumber] = useState('');
-  const [membershipPin, setMembershipPin] = useState('');
-  const [validatedCustomer, setValidatedCustomer] = useState(null);
+  const [customerData, setCustomerData] = useState(null);
+  const [loadingCustomer, setLoadingCustomer] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState('pending');
   const [isProcessing, setIsProcessing] = useState(false);
   const [errors, setErrors] = useState({});
@@ -46,12 +45,37 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
   const duration = formatDuration(booking.startTime);
   const VehicleIcon = booking.vehicleType === 'two-wheeler' ? Bike : Car;
 
+  // Fetch customer data when modal opens
+  React.useEffect(() => {
+    if (isOpen && booking?.customer) {
+      fetchCustomerData();
+    }
+  }, [isOpen, booking?.customer]);
+
+  const fetchCustomerData = async () => {
+    setLoadingCustomer(true);
+    try {
+      const response = await apiService.getCustomerById(booking.customer);
+      setCustomerData(response.data.customer);
+    } catch (error) {
+      console.error('Error fetching customer data:', error);
+      setErrors({ customer: 'Failed to load customer data' });
+    } finally {
+      setLoadingCustomer(false);
+    }
+  };
+
+  // Check if customer has active membership
+  const hasActiveMembership = customerData?.membership?.isActive && 
+                              customerData?.membership?.membershipNumber && 
+                              customerData?.membership?.expiryDate && 
+                              new Date(customerData.membership.expiryDate) > new Date();
+
   const handleClose = () => {
     setCurrentPage('details');
     setPaymentMethod('');
-    setMembershipNumber('');
-    setMembershipPin('');
-    setValidatedCustomer(null);
+    setCustomerData(null);
+    setLoadingCustomer(false);
     setPaymentStatus('pending');
     setIsProcessing(false);
     setErrors({});
@@ -79,23 +103,10 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
     setErrors({});
   };
 
-  const validateMembership = () => {
-    const newErrors = {};
-    if (!membershipNumber.trim()) {
-      newErrors.membershipNumber = 'Membership number is required';
-    }
-    if (!membershipPin.trim()) {
-      newErrors.membershipPin = 'PIN is required';
-    }
-    if (membershipPin.length !== 4) {
-      newErrors.membershipPin = 'PIN must be 4 digits';
-    }
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
   const handlePaymentProcess = async () => {
-    if (paymentMethod === 'membership' && !validateMembership()) {
+    // Check if membership payment is selected but no active membership
+    if (paymentMethod === 'membership' && !hasActiveMembership) {
+      setErrors({ membership: 'No active membership found for this customer' });
       return;
     }
 
@@ -107,28 +118,12 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
     try {
       let finalAmount = parkingFee;
       let membershipDiscount = 0;
-      let validCustomer = null;
 
-      // Validate membership if using membership payment
-      if (paymentMethod === 'membership') {
-        try {
-          const response = await apiService.validateMembership(membershipNumber, membershipPin);
-          validCustomer = response.data.customer;
-          setValidatedCustomer(validCustomer);
-          
-          // Apply 100% membership discount (free parking for members)
-          membershipDiscount = parkingFee;
-          finalAmount = 0;
-          
-        } catch (error) {
-          console.error('Membership validation failed:', error);
-          setPaymentStatus('failed');
-          setErrors({ 
-            membership: error.message || 'Invalid membership number or PIN. Please try again.' 
-          });
-          setIsProcessing(false);
-          return;
-        }
+      // Apply membership discount if using membership payment
+      if (paymentMethod === 'membership' && hasActiveMembership) {
+        // Apply 100% membership discount (free parking for members)
+        membershipDiscount = parkingFee;
+        finalAmount = 0;
       }
 
       // Simulate payment processing delay for non-membership payments
@@ -148,13 +143,13 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
           finalAmount: finalAmount,
           paymentMethod: paymentMethod,
           paymentTime: new Date().toISOString(),
-          ...(paymentMethod === 'membership' && {
-            membershipNumber: membershipNumber,
+          ...(paymentMethod === 'membership' && hasActiveMembership && {
+            membershipNumber: customerData.membership.membershipNumber,
             membershipDiscount: membershipDiscount,
             membershipCustomer: {
-              _id: validCustomer._id,
-              fullName: validCustomer.fullName,
-              phoneNumber: validCustomer.phoneNumber
+              _id: customerData._id,
+              fullName: customerData.fullName,
+              phoneNumber: customerData.phoneNumber
             }
           })
         };
@@ -359,22 +354,48 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
 
         {/* Membership Payment */}
         <button
-          onClick={() => handlePaymentMethodSelect('membership')}
+          onClick={() => hasActiveMembership && handlePaymentMethodSelect('membership')}
+          disabled={!hasActiveMembership}
           className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
-            paymentMethod === 'membership'
+            !hasActiveMembership
+              ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-60'
+              : paymentMethod === 'membership'
               ? 'border-purple-500 bg-purple-50 shadow-sm'
               : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
           }`}
         >
           <div className="flex items-center space-x-4">
-            <div className={`p-3 rounded-lg ${paymentMethod === 'membership' ? 'bg-purple-100' : 'bg-gray-100'}`}>
-              <CreditCard className={`${paymentMethod === 'membership' ? 'text-purple-600' : 'text-gray-600'}`} size={20} />
+            <div className={`p-3 rounded-lg ${
+              !hasActiveMembership 
+                ? 'bg-gray-100'
+                : paymentMethod === 'membership' 
+                ? 'bg-purple-100' 
+                : 'bg-gray-100'
+            }`}>
+              <CreditCard className={`${
+                !hasActiveMembership
+                  ? 'text-gray-400'
+                  : paymentMethod === 'membership' 
+                  ? 'text-purple-600' 
+                  : 'text-gray-600'
+              }`} size={20} />
             </div>
-            <div>
-              <h5 className="font-semibold text-gray-900">Membership Card</h5>
-              <p className="text-sm text-gray-600">Free parking for members (100% discount)</p>
+            <div className="flex-1">
+              <h5 className={`font-semibold ${!hasActiveMembership ? 'text-gray-500' : 'text-gray-900'}`}>
+                Membership Card
+              </h5>
+              {loadingCustomer ? (
+                <p className="text-sm text-gray-500">Loading membership status...</p>
+              ) : hasActiveMembership ? (
+                <>
+                  <p className="text-sm text-green-600 font-medium">✓ Active Membership</p>
+                  <p className="text-xs text-gray-500">Free parking (100% discount)</p>
+                </>
+              ) : (
+                <p className="text-sm text-red-600">✗ No Active Membership</p>
+              )}
             </div>
-            {paymentMethod === 'membership' && (
+            {paymentMethod === 'membership' && hasActiveMembership && (
               <div className="ml-auto">
                 <CheckCircle className="text-purple-500" size={20} />
               </div>
@@ -396,36 +417,29 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
         </div>
       )}
 
-      {/* Membership Form */}
-      {paymentMethod === 'membership' && (
-        <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 space-y-4">
-          <h5 className="font-semibold text-purple-900">Enter Membership Details</h5>
-          <Input
-            label="Membership Number"
-            value={membershipNumber}
-            onChange={(e) => setMembershipNumber(e.target.value)}
-            placeholder="Enter membership number"
-            error={errors.membershipNumber}
-          />
-          <Input
-            label="4-Digit PIN"
-            type="password"
-            value={membershipPin}
-            onChange={(e) => setMembershipPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-            placeholder="****"
-            error={errors.membershipPin}
-          />
-          {membershipNumber && membershipPin.length === 4 && (
-            <div className="bg-green-100 border border-green-200 rounded-lg p-3">
-              <div className="flex items-center space-x-2">
-                <CheckCircle className="text-green-600" size={16} />
-                <div className="text-sm text-green-800">
-                  <p className="font-semibold">Membership discount: 100% off (FREE)</p>
-                  <p>Final amount: {formatCurrency(0)}</p>
-                </div>
-              </div>
+      {/* Membership Status */}
+      {paymentMethod === 'membership' && hasActiveMembership && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+          <div className="flex items-center space-x-2 mb-3">
+            <CheckCircle className="text-green-600" size={16} />
+            <h5 className="font-semibold text-green-900">Active Membership Found</h5>
+          </div>
+          <div className="space-y-2 text-sm text-green-800">
+            <p><strong>Customer:</strong> {customerData?.fullName}</p>
+            <p><strong>Membership Number:</strong> {customerData?.membership?.membershipNumber}</p>
+            <p><strong>Expires:</strong> {new Date(customerData?.membership?.expiryDate).toLocaleDateString()}</p>
+            <div className="bg-green-100 rounded-lg p-3 mt-3">
+              <p className="font-semibold">Membership discount: 100% off (FREE)</p>
+              <p>Final amount: {formatCurrency(0)}</p>
             </div>
-          )}
+          </div>
+        </div>
+      )}
+
+      {/* Error Display */}
+      {errors.membership && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+          <p className="text-sm text-red-600">{errors.membership}</p>
         </div>
       )}
 
@@ -441,10 +455,11 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
         </Button>
         <Button
           onClick={handlePaymentProcess}
-          disabled={!paymentMethod}
+          disabled={!paymentMethod || (paymentMethod === 'membership' && !hasActiveMembership)}
           className="flex-1"
         >
-          {paymentMethod === 'membership' ? 'Process Membership' : 
+          {paymentMethod === 'membership' ? 
+            (hasActiveMembership ? 'Process Membership' : 'No Active Membership') : 
            paymentMethod === 'upi' ? 'Confirm UPI Payment' : 
            'Collect Cash'}
         </Button>
@@ -490,10 +505,10 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
                 : `${paymentMethod.toUpperCase()} payment of ${formatCurrency(parkingFee)} collected successfully.`
               }
             </p>
-            {paymentMethod === 'membership' && validatedCustomer && (
+            {paymentMethod === 'membership' && hasActiveMembership && customerData && (
               <div className="mt-2 pt-2 border-t border-green-200">
                 <p className="text-xs text-green-600">
-                  Customer: {validatedCustomer.fullName} ({validatedCustomer.phoneNumber})
+                  Customer: {customerData.fullName} ({customerData.phoneNumber})
                 </p>
                 <p className="text-xs text-green-600">
                   Discount applied: {formatCurrency(parkingFee)}
@@ -515,9 +530,6 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
             setCurrentPage('payment');
             setPaymentStatus('pending');
             setErrors({});
-            setMembershipNumber('');
-            setMembershipPin('');
-            setValidatedCustomer(null);
           }} className="flex-1">
             Try Again
           </Button>
