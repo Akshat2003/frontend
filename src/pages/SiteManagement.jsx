@@ -201,8 +201,8 @@ const SiteManagement = () => {
           }
         },
         pricing: {
-          twoWheeler: { baseRate: 15, minimumCharge: 15 },
-          fourWheeler: { baseRate: 25, minimumCharge: 25 },
+          twoWheeler: { baseRate: 20, minimumCharge: 20 },
+          fourWheeler: { baseRate: 40, minimumCharge: 40 },
           peakHourMultiplier: 1.5,
           peakHours: { start: '08:00', end: '20:00' }
         }

@@ -1,21 +1,11 @@
 export const calculateParkingFee = (startTime, endTime, vehicleType) => {
-  const start = new Date(startTime);
-  const end = new Date(endTime);
-  const diffInMs = end - start;
-  const diffInHours = Math.ceil(diffInMs / (1000 * 60 * 60));
-
+  // Fixed 4-hour duration pricing - payment made upfront regardless of actual duration
   const baseRates = {
-    'two-wheeler': { firstHour: 10, additionalHour: 10 },
-    'four-wheeler': { firstHour: 20, additionalHour: 20 },
+    'two-wheeler': 20,  // ₹20 for 4 hours
+    'four-wheeler': 40, // ₹40 for 4 hours
   };
 
-  const rates = baseRates[vehicleType] || baseRates['two-wheeler'];
-  
-  if (diffInHours <= 1) {
-    return rates.firstHour;
-  } else {
-    return rates.firstHour + (diffInHours - 1) * rates.additionalHour;
-  }
+  return baseRates[vehicleType] || baseRates['two-wheeler'];
 };
 
 export const formatCurrency = (amount) => {

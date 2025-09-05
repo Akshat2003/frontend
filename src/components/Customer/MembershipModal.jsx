@@ -27,11 +27,21 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
   const [showPin, setShowPin] = useState(false);
   const [errors, setErrors] = useState({});
 
+  // Membership pricing based on vehicle type (assumed two-wheeler as default)
+  const getMembershipPricing = (vehicleType = 'two-wheeler') => {
+    if (vehicleType === 'four-wheeler') {
+      return { monthly: 1000, yearly: 12000 };
+    }
+    return { monthly: 750, yearly: 9000 }; // two-wheeler pricing
+  };
+
+  const pricing = getMembershipPricing();
+
   const membershipTypeOptions = [
-    { value: 'monthly', label: 'Monthly (1 month)' },
-    { value: 'quarterly', label: 'Quarterly (3 months)' },
-    { value: 'yearly', label: 'Yearly (12 months)' },
-    { value: 'premium', label: 'Premium (24 months)' }
+    { value: 'monthly', label: `Monthly (1 month) - ₹${pricing.monthly}` },
+    { value: 'quarterly', label: `Quarterly (3 months) - ₹${pricing.monthly * 3}` },
+    { value: 'yearly', label: `Yearly (12 months) - ₹${pricing.yearly}` },
+    { value: 'premium', label: `Premium (24 months) - ₹${pricing.yearly * 2}` }
   ];
 
   // Update validity term when membership type changes
