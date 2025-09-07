@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Activity, BarChart3, Settings, Users, Building, Cog, MoreHorizontal } from 'lucide-react';
+import { Plus, Activity, BarChart3, Settings, Users, Building, Cog, MoreHorizontal, CreditCard } from 'lucide-react';
 
 const Navigation = ({ activeTab, setActiveTab, user }) => {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -9,6 +9,7 @@ const Navigation = ({ activeTab, setActiveTab, user }) => {
   const baseNavItems = [
     { id: 'bookings', label: 'Bookings', icon: Plus },
     { id: 'listings', label: 'Active', icon: Activity },
+    { id: 'membership', label: 'Membership', icon: CreditCard },
     // { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
@@ -24,7 +25,7 @@ const Navigation = ({ activeTab, setActiveTab, user }) => {
   // Determine which items to show
   const visibleNavItems = user?.role === 'admin' 
     ? [
-        ...baseNavItems.slice(0, 2), // bookings, listings
+        ...baseNavItems.slice(0, 3), // bookings, listings, membership
         { id: 'more', label: 'More', icon: MoreHorizontal }
       ]
     : baseNavItems;

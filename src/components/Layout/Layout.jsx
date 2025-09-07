@@ -9,6 +9,8 @@ const Layout = ({ children, activeTab, setActiveTab, user, onLogout }) => {
         return 'Parking Bookings';
       case 'listings':
         return 'Active Listings';
+      case 'membership':
+        return 'Membership Management';
       case 'customers':
         return 'Customer Management';
       case 'sites':

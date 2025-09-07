@@ -7,6 +7,7 @@ import SiteManagement from './pages/SiteManagement';
 import MachineManagement from './pages/MachineManagement';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
+import MembershipPurchase from './pages/MembershipPurchase';
 import AuthWrapper from './pages/auth/AuthWrapper';
 
 function App() {
@@ -18,6 +19,8 @@ function App() {
         return <OnSpotBookings />;
       case 'listings':
         return <ActiveListings />;
+      case 'membership':
+        return <MembershipPurchase />;
       case 'customers':
         // Only render CustomerManagement for admin users
         return user?.role === 'admin' ? <CustomerManagement /> : <OnSpotBookings />;
