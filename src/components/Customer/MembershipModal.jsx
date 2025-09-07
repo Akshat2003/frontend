@@ -21,13 +21,14 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
   const [isCreating, setIsCreating] = useState(false);
   const [membershipData, setMembershipData] = useState({
     membershipType: 'yearly',
+    vehicleType: 'two-wheeler',
     validityTerm: 12
   });
   const [showCredentials, setShowCredentials] = useState(false);
   const [showPin, setShowPin] = useState(false);
   const [errors, setErrors] = useState({});
 
-  // Membership pricing based on vehicle type (assumed two-wheeler as default)
+  // Membership pricing based on vehicle type
   const getMembershipPricing = (vehicleType = 'two-wheeler') => {
     if (vehicleType === 'four-wheeler') {
       return { monthly: 1000, yearly: 12000 };
@@ -35,7 +36,7 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
     return { monthly: 750, yearly: 9000 }; // two-wheeler pricing
   };
 
-  const pricing = getMembershipPricing();
+  const pricing = getMembershipPricing(membershipData.vehicleType);
 
   const membershipTypeOptions = [
     { value: 'monthly', label: `Monthly (1 month) - ₹${pricing.monthly}` },
@@ -65,6 +66,106 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
     setIsCreating(true);
 
     try {
+      // Check if customer has existing membership for different vehicle type
+      const hasExistingMembership = customer.membership?.isActive && 
+                                   customer.membership?.membershipNumber && 
+                                   customer.membership?.expiryDate && 
+                                   new Date(customer.membership.expiryDate) > new Date();
+
+      const existingVehicleType = customer.membership?.vehicleType || 'two-wheeler';
+      const isDifferentVehicleType = hasExistingMembership && existingVehicleType !== membershipData.vehicleType;
+
+      // If customer has existing membership for different vehicle type, 
+      // deactivate it first, then create the new one
+      if (isDifferentVehicleType) {
+        console.log(`Customer has ${existingVehicleType} membership, creating ${membershipData.vehicleType} membership`);
+        
+        // For now, we'll create membership with local fallback since backend doesn't support multiple memberships
+        // In a real scenario, you'd modify the backend to support multiple memberships
+        
+        // Calculate membership price based on vehicle type and membership type
+        const pricing = getMembershipPricing(membershipData.vehicleType);
+        let membershipPrice;
+        
+        switch (membershipData.membershipType) {
+          case 'monthly':
+            membershipPrice = pricing.monthly;
+            break;
+          case 'quarterly':
+            membershipPrice = pricing.monthly * 3;
+            break;
+          case 'yearly':
+            membershipPrice = pricing.yearly;
+            break;
+          case 'premium':
+            membershipPrice = pricing.yearly * 2;
+            break;
+          default:
+            membershipPrice = pricing.yearly;
+        }
+        
+        // Get current user for operator tracking
+        const getCurrentUser = () => {
+          try {
+            const userData = localStorage.getItem('parkingOperator');
+            return userData ? JSON.parse(userData) : null;
+          } catch (error) {
+            return null;
+          }
+        };
+
+        const currentUser = getCurrentUser();
+
+        const membershipPurchase = {
+          id: `cm_${Date.now()}`,
+          customerId: customer._id,
+          customerName: `${customer.firstName} ${customer.lastName}`,
+          vehicleType: membershipData.vehicleType,
+          membershipType: membershipData.membershipType,
+          amount: membershipPrice,
+          purchaseDate: new Date().toISOString(),
+          siteId: 'customer_management',
+          operatorId: currentUser?.operatorId || 'unknown', // Add operator tracking
+          isActive: true
+        };
+
+        // Store in localStorage for analytics tracking
+        const existingPurchases = JSON.parse(localStorage.getItem('membershipPurchases') || '[]');
+        existingPurchases.push(membershipPurchase);
+        localStorage.setItem('membershipPurchases', JSON.stringify(existingPurchases));
+
+        // Trigger analytics update event
+        window.dispatchEvent(new CustomEvent('membershipPurchased', {
+          detail: { 
+            membershipData: membershipData,
+            amount: membershipPrice,
+            vehicleType: membershipData.vehicleType,
+            purchase: membershipPurchase
+          }
+        }));
+
+        // Show success message
+        setShowCredentials(true);
+        
+        // Create a mock updated customer for display purposes
+        const mockUpdatedCustomer = {
+          ...customer,
+          membership: {
+            ...customer.membership,
+            vehicleType: membershipData.vehicleType,
+            membershipType: membershipData.membershipType,
+            membershipNumber: `MP${Date.now().toString().slice(-8)}`,
+            pin: Math.floor(1000 + Math.random() * 9000).toString(),
+            isActive: true,
+            expiryDate: new Date(Date.now() + membershipData.validityTerm * 30 * 24 * 60 * 60 * 1000).toISOString()
+          }
+        };
+        
+        onMembershipUpdate(mockUpdatedCustomer);
+        return;
+      }
+
+      // Normal membership creation for customers without existing membership
       const response = await apiService.createMembership(customer._id, membershipData);
       
       // Show the created credentials
@@ -118,10 +219,26 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
 
   if (!customer) return null;
 
-  const hasActiveMembership = customer.membership?.isActive && 
-                              customer.membership?.membershipNumber && 
-                              customer.membership?.expiryDate && 
-                              new Date(customer.membership.expiryDate) > new Date();
+  // Check if customer has active membership for the selected vehicle type
+  const hasActiveMembershipForVehicleType = (vehicleType) => {
+    // For now, we assume single membership model, but in future this could check multiple memberships
+    if (!customer.membership?.isActive || !customer.membership?.membershipNumber || !customer.membership?.expiryDate) {
+      return false;
+    }
+    
+    const isActive = new Date(customer.membership.expiryDate) > new Date();
+    const membershipVehicleType = customer.membership?.vehicleType || 'two-wheeler'; // Default to two-wheeler for old memberships
+    
+    return isActive && membershipVehicleType === vehicleType;
+  };
+
+  const hasActiveMembership = hasActiveMembershipForVehicleType(membershipData.vehicleType);
+  
+  // Check if customer has ANY active membership (for deactivation purposes)
+  const hasAnyActiveMembership = customer.membership?.isActive && 
+                                customer.membership?.membershipNumber && 
+                                customer.membership?.expiryDate && 
+                                new Date(customer.membership.expiryDate) > new Date();
 
   const isExpired = customer.membership?.expiryDate && 
                    new Date(customer.membership.expiryDate) <= new Date();
@@ -160,9 +277,10 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
               <div className="flex items-center space-x-3">
                 <Shield className="text-green-600" size={20} />
                 <div>
-                  <h4 className="font-semibold text-green-900">Active Membership</h4>
+                  <h4 className="font-semibold text-green-900">Active Membership - {membershipData.vehicleType.replace('-', ' ').toUpperCase()}</h4>
                   <div className="space-y-1 text-sm text-green-700">
                     <p><strong>Type:</strong> {customer.membership.membershipType}</p>
+                    <p><strong>Vehicle:</strong> {customer.membership?.vehicleType || 'two-wheeler'}</p>
                     <p><strong>Expires:</strong> {formatDate(customer.membership.expiryDate)}</p>
                     {daysRemaining > 0 ? (
                       <p className="flex items-center space-x-1">
@@ -197,15 +315,77 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
               </div>
             </div>
           </div>
+        ) : hasAnyActiveMembership ? (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center space-x-3">
+                <Shield className="text-blue-600" size={20} />
+                <div>
+                  <h4 className="font-semibold text-blue-900">Active Membership - {(customer.membership?.vehicleType || 'two-wheeler').replace('-', ' ').toUpperCase()}</h4>
+                  <div className="space-y-1 text-sm text-blue-700">
+                    <p><strong>Type:</strong> {customer.membership.membershipType}</p>
+                    <p><strong>Vehicle:</strong> {customer.membership?.vehicleType || 'two-wheeler'}</p>
+                    <p><strong>Expires:</strong> {formatDate(customer.membership.expiryDate)}</p>
+                    {daysRemaining > 0 ? (
+                      <p className="flex items-center space-x-1">
+                        <Clock size={14} />
+                        <span><strong>{daysRemaining}</strong> days remaining</span>
+                      </p>
+                    ) : (
+                      <p className="text-red-600 font-medium">Expired</p>
+                    )}
+                    <p className="text-xs mt-2 text-blue-600">
+                      Selected: {membershipData.vehicleType} membership (different from active membership)
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowCredentials(true)}
+                >
+                  <Eye size={16} className="mr-1" />
+                  View Details
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-red-300 text-red-600 hover:bg-red-50"
+                  onClick={handleDeactivateMembership}
+                  disabled={isCreating}
+                >
+                  Deactivate
+                </Button>
+              </div>
+            </div>
+          </div>
         ) : customer.membership?.membershipNumber && isExpired ? (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4">
             <div className="flex items-center space-x-3">
               <AlertTriangle className="text-red-600" size={20} />
               <div>
                 <h4 className="font-semibold text-red-900">Expired Membership</h4>
-                <p className="text-sm text-red-700">
-                  Membership expired on {formatDate(customer.membership.expiryDate)}
-                </p>
+                <div className="text-sm text-red-700">
+                  <p><strong>Vehicle:</strong> {customer.membership?.vehicleType || 'two-wheeler'}</p>
+                  <p>Membership expired on {formatDate(customer.membership.expiryDate)}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : customer.membership?.membershipNumber ? (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-center space-x-3">
+              <Shield className="text-blue-600" size={20} />
+              <div>
+                <h4 className="font-semibold text-blue-900">Different Vehicle Type Membership</h4>
+                <div className="text-sm text-blue-700">
+                  <p>Customer has active <strong>{customer.membership?.vehicleType || 'two-wheeler'}</strong> membership</p>
+                  <p>Selected: <strong>{membershipData.vehicleType}</strong> membership</p>
+                  <p className="text-xs mt-1">You can create multiple memberships for different vehicle types</p>
+                </div>
               </div>
             </div>
           </div>
@@ -216,7 +396,7 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
               <div>
                 <h4 className="font-semibold text-yellow-900">No Active Membership</h4>
                 <p className="text-sm text-yellow-700">
-                  This customer does not have an active membership
+                  Customer does not have an active {membershipData.vehicleType} membership
                 </p>
               </div>
             </div>
@@ -229,6 +409,20 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
             <h4 className="font-semibold text-gray-900 mb-4">Create New Membership</h4>
             
             <div className="space-y-4">
+              <Select
+                label="Vehicle Type"
+                value={membershipData.vehicleType}
+                onChange={(e) => setMembershipData(prev => ({ 
+                  ...prev, 
+                  vehicleType: e.target.value 
+                }))}
+                options={[
+                  { value: 'two-wheeler', label: 'Two Wheeler (₹750/month)' },
+                  { value: 'four-wheeler', label: 'Four Wheeler (₹1000/month)' }
+                ]}
+                required
+              />
+
               <Select
                 label="Membership Type"
                 value={membershipData.membershipType}

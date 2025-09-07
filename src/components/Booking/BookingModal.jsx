@@ -16,7 +16,9 @@ import {
   QrCode,
   KeyRound,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  Plus,
+  Shield
 } from 'lucide-react';
 import Modal from '../Common/Modal';
 import Button from '../Common/Button';
@@ -36,6 +38,9 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteReason, setDeleteReason] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showMembershipModal, setShowMembershipModal] = useState(false);
+  const [membershipPaymentMethod, setMembershipPaymentMethod] = useState('');
+  const [isMembershipProcessing, setIsMembershipProcessing] = useState(false);
   const { deleteBooking } = useBookings();
 
   if (!booking) return null;
@@ -72,6 +77,13 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
                               customerData?.membership?.membershipNumber && 
                               customerData?.membership?.expiryDate && 
                               new Date(customerData.membership.expiryDate) > new Date();
+  
+  // Check if membership vehicle type matches current booking vehicle type
+  const membershipVehicleType = customerData?.membership?.vehicleType || 'two-wheeler'; // Default to two-wheeler for old memberships
+  const vehicleTypeMatches = membershipVehicleType === booking?.vehicleType;
+  
+  // Membership is valid only if active AND vehicle type matches
+  const canUseMembership = hasActiveMembership && vehicleTypeMatches;
 
   const handleClose = () => {
     setCurrentPage('details');
@@ -105,10 +117,119 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
     setErrors({});
   };
 
+  const handleMembershipPurchase = async () => {
+    if (!membershipPaymentMethod) {
+      alert('Please select a payment method');
+      return;
+    }
+
+    setIsMembershipProcessing(true);
+    
+    try {
+      // Calculate membership price based on vehicle type
+      const membershipPrice = booking.vehicleType === 'two-wheeler' ? 750 : 1000;
+      
+      // Create membership via API
+      const customerId = booking?.customer?._id || booking?.customer;
+      if (!customerId) {
+        throw new Error('Customer ID not found');
+      }
+
+      const membershipData = {
+        customerId: customerId,
+        membershipType: 'monthly',
+        vehicleType: booking.vehicleType,
+        amount: membershipPrice,
+        paymentMethod: membershipPaymentMethod,
+        validFrom: new Date().toISOString(),
+        validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
+        membershipNumber: `MP${Date.now().toString().slice(-8)}`,
+        // Transaction details for analytics tracking
+        transactionType: 'membership_purchase',
+        transactionDate: new Date().toISOString(),
+        siteId: booking.siteId || booking.site?._id,
+        operatorId: booking.operatorId, // If available
+        customerName: booking.customerName,
+        phoneNumber: booking.phoneNumber,
+        // Additional metadata for analytics
+        metadata: {
+          purchaseContext: 'booking_modal',
+          relatedBookingId: booking._id,
+          vehicleNumber: booking.vehicleNumber
+        }
+      };
+
+      // Call the API to create membership
+      await apiService.createMembership(customerId, membershipData);
+      
+      // Get current user for operator tracking
+      const getCurrentUser = () => {
+        try {
+          const userData = localStorage.getItem('parkingOperator');
+          return userData ? JSON.parse(userData) : null;
+        } catch (error) {
+          return null;
+        }
+      };
+
+      const currentUser = getCurrentUser();
+
+      // Track membership purchase locally for analytics
+      const membershipPurchase = {
+        id: `mp_${Date.now()}`,
+        customerId: customerId,
+        customerName: booking.customerName,
+        vehicleType: booking.vehicleType,
+        amount: membershipPrice,
+        paymentMethod: membershipPaymentMethod,
+        purchaseDate: new Date().toISOString(),
+        siteId: booking.siteId || booking.site?._id || 'unknown',
+        membershipNumber: membershipData.membershipNumber,
+        operatorId: currentUser?.operatorId || 'unknown', // Add operator tracking
+        isActive: true // Mark as active by default
+      };
+
+      // Store in localStorage for analytics tracking
+      const existingPurchases = JSON.parse(localStorage.getItem('membershipPurchases') || '[]');
+      existingPurchases.push(membershipPurchase);
+      localStorage.setItem('membershipPurchases', JSON.stringify(existingPurchases));
+      
+      // Refresh customer data to get the new membership
+      await fetchCustomerData();
+      
+      // Close membership modal
+      setShowMembershipModal(false);
+      setMembershipPaymentMethod('');
+      
+      // Trigger a custom event to refresh analytics (if on analytics page)
+      window.dispatchEvent(new CustomEvent('membershipPurchased', {
+        detail: { 
+          membershipData,
+          amount: membershipPrice,
+          vehicleType: booking.vehicleType,
+          purchase: membershipPurchase
+        }
+      }));
+      
+      // Show success message
+      alert(`Monthly pass purchased successfully for ${formatCurrency(membershipPrice)}! Customer can now use membership payment for free parking.`);
+      
+    } catch (error) {
+      console.error('Error purchasing membership:', error);
+      alert('Failed to purchase membership. Please try again.');
+    } finally {
+      setIsMembershipProcessing(false);
+    }
+  };
+
   const handlePaymentProcess = async () => {
     // Check if membership payment is selected but no active membership
-    if (paymentMethod === 'membership' && !hasActiveMembership) {
-      setErrors({ membership: 'No active membership found for this customer' });
+    if (paymentMethod === 'membership' && !canUseMembership) {
+      if (!hasActiveMembership) {
+        setErrors({ membership: 'No active membership found for this customer' });
+      } else if (!vehicleTypeMatches) {
+        setErrors({ membership: `Your ${membershipVehicleType} membership cannot be used for ${booking?.vehicleType} parking` });
+      }
       return;
     }
 
@@ -122,8 +243,8 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
       let membershipDiscount = 0;
 
       // Apply membership discount if using membership payment
-      if (paymentMethod === 'membership' && hasActiveMembership) {
-        // Apply 100% membership discount (free parking for members)
+      if (paymentMethod === 'membership' && canUseMembership) {
+        // Apply 100% membership discount (free parking for members with matching vehicle type)
         membershipDiscount = parkingFee;
         finalAmount = 0;
       }
@@ -357,55 +478,94 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
           </div>
         </button>
 
-        {/* Membership Payment */}
+        {/* Membership Payment / Purchase */}
         <button
-          onClick={() => hasActiveMembership && handlePaymentMethodSelect('membership')}
-          disabled={!hasActiveMembership}
+          onClick={() => canUseMembership ? handlePaymentMethodSelect('membership') : setShowMembershipModal(true)}
           className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
-            !hasActiveMembership
-              ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-60'
-              : paymentMethod === 'membership'
-              ? 'border-purple-500 bg-purple-50 shadow-sm'
-              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+            canUseMembership 
+              ? paymentMethod === 'membership'
+                ? 'border-purple-500 bg-purple-50 shadow-sm'
+                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+              : hasActiveMembership && !vehicleTypeMatches
+              ? 'border-orange-300 bg-orange-50 hover:bg-orange-100 hover:border-orange-400'
+              : 'border-purple-300 bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 hover:border-purple-400'
           }`}
         >
           <div className="flex items-center space-x-4">
             <div className={`p-3 rounded-lg ${
-              !hasActiveMembership 
-                ? 'bg-gray-100'
-                : paymentMethod === 'membership' 
-                ? 'bg-purple-100' 
-                : 'bg-gray-100'
+              hasActiveMembership 
+                ? paymentMethod === 'membership' 
+                  ? 'bg-purple-100' 
+                  : 'bg-gray-100'
+                : 'bg-gradient-to-br from-purple-100 to-indigo-100'
             }`}>
-              <CreditCard className={`${
-                !hasActiveMembership
-                  ? 'text-gray-400'
-                  : paymentMethod === 'membership' 
-                  ? 'text-purple-600' 
-                  : 'text-gray-600'
-              }`} size={20} />
+              {hasActiveMembership ? (
+                <CreditCard className={`${
+                  paymentMethod === 'membership' 
+                    ? 'text-purple-600' 
+                    : 'text-gray-600'
+                }`} size={20} />
+              ) : (
+                <Shield className="text-purple-600" size={20} />
+              )}
             </div>
             <div className="flex-1">
-              <h5 className={`font-semibold ${!hasActiveMembership ? 'text-gray-500' : 'text-gray-900'}`}>
-                Membership Card
+              <h5 className="font-semibold text-gray-900">
+                {hasActiveMembership ? 'Membership Card' : 'Purchase Monthly Pass'}
               </h5>
               {loadingCustomer ? (
                 <p className="text-sm text-gray-500">Loading membership status...</p>
               ) : hasActiveMembership ? (
                 <>
-                  <p className="text-sm text-green-600 font-medium">✓ Active Membership</p>
-                  <p className="text-xs text-gray-500">Free parking (100% discount)</p>
+                  {vehicleTypeMatches ? (
+                    <>
+                      <p className="text-sm text-green-600 font-medium">✓ Active Membership</p>
+                      <p className="text-xs text-gray-500">Free parking (100% discount)</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm text-orange-600 font-medium">⚠ Vehicle Type Mismatch</p>
+                      <p className="text-xs text-orange-600">
+                        {membershipVehicleType} membership cannot be used for {booking?.vehicleType}
+                      </p>
+                    </>
+                  )}
                 </>
               ) : (
-                <p className="text-sm text-red-600">✗ No Active Membership</p>
+                <p className="text-sm text-gray-600">
+                  {booking?.vehicleType === 'two-wheeler' ? '₹750' : '₹1000'} for 30 days of free parking
+                </p>
               )}
             </div>
-            {paymentMethod === 'membership' && hasActiveMembership && (
+            {hasActiveMembership ? (
+              canUseMembership && paymentMethod === 'membership' ? (
+                <div className="ml-auto">
+                  <CheckCircle className="text-purple-500" size={20} />
+                </div>
+              ) : !vehicleTypeMatches ? (
+                <div className="ml-auto">
+                  <AlertTriangle className="text-orange-500" size={20} />
+                </div>
+              ) : null
+            ) : (
               <div className="ml-auto">
-                <CheckCircle className="text-purple-500" size={20} />
+                <Plus className="text-purple-600" size={20} />
               </div>
             )}
           </div>
+          {!hasActiveMembership ? (
+            <div className="mt-3 px-3 py-1 bg-purple-100 rounded-lg text-center">
+              <p className="text-xs text-purple-700 font-medium">
+                ✨ Get unlimited free parking for this customer
+              </p>
+            </div>
+          ) : hasActiveMembership && !vehicleTypeMatches && (
+            <div className="mt-3 px-3 py-1 bg-orange-100 rounded-lg text-center">
+              <p className="text-xs text-orange-700 font-medium">
+                ⚠ Purchase {booking?.vehicleType} membership to use for free parking
+              </p>
+            </div>
+          )}
         </button>
       </div>
 
@@ -435,19 +595,41 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
 
       {/* Membership Status */}
       {paymentMethod === 'membership' && hasActiveMembership && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+        <div className={`border rounded-lg p-4 ${
+          vehicleTypeMatches 
+            ? 'bg-green-50 border-green-200' 
+            : 'bg-orange-50 border-orange-200'
+        }`}>
           <div className="flex items-center space-x-2 mb-3">
-            <CheckCircle className="text-green-600" size={16} />
-            <h5 className="font-semibold text-green-900">Active Membership Found</h5>
+            {vehicleTypeMatches ? (
+              <>
+                <CheckCircle className="text-green-600" size={16} />
+                <h5 className="font-semibold text-green-900">Active Membership Found</h5>
+              </>
+            ) : (
+              <>
+                <AlertTriangle className="text-orange-600" size={16} />
+                <h5 className="font-semibold text-orange-900">Vehicle Type Mismatch</h5>
+              </>
+            )}
           </div>
-          <div className="space-y-2 text-sm text-green-800">
+          <div className={`space-y-2 text-sm ${vehicleTypeMatches ? 'text-green-800' : 'text-orange-800'}`}>
             <p><strong>Customer:</strong> {customerData?.fullName}</p>
             <p><strong>Membership Number:</strong> {customerData?.membership?.membershipNumber}</p>
+            <p><strong>Membership Type:</strong> {membershipVehicleType} vehicle</p>
+            <p><strong>Current Booking:</strong> {booking?.vehicleType} vehicle</p>
             <p><strong>Expires:</strong> {new Date(customerData?.membership?.expiryDate).toLocaleDateString()}</p>
-            <div className="bg-green-100 rounded-lg p-3 mt-3">
-              <p className="font-semibold">Membership discount: 100% off (FREE)</p>
-              <p>Final amount: {formatCurrency(0)}</p>
-            </div>
+            {vehicleTypeMatches ? (
+              <div className="bg-green-100 rounded-lg p-3 mt-3">
+                <p className="font-semibold">Membership discount: 100% off (FREE)</p>
+                <p>Final amount: {formatCurrency(0)}</p>
+              </div>
+            ) : (
+              <div className="bg-orange-100 rounded-lg p-3 mt-3">
+                <p className="font-semibold text-orange-900">Cannot use membership for different vehicle type</p>
+                <p>Please use cash/UPI payment or purchase {booking?.vehicleType} membership</p>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -471,11 +653,13 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
         </Button>
         <Button
           onClick={handlePaymentProcess}
-          disabled={!paymentMethod || (paymentMethod === 'membership' && !hasActiveMembership)}
+          disabled={!paymentMethod || (paymentMethod === 'membership' && !canUseMembership)}
           className="flex-1"
         >
           {paymentMethod === 'membership' ? 
-            (hasActiveMembership ? 'Process Membership' : 'No Active Membership') : 
+            (canUseMembership ? 'Process Membership' : 
+             !hasActiveMembership ? 'No Active Membership' : 
+             'Vehicle Type Mismatch') : 
            paymentMethod === 'upi' ? 'Confirm UPI Payment' : 
            'Collect Cash'}
         </Button>
@@ -576,6 +760,140 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
         {currentPage === 'details' && renderBookingDetails()}
         {currentPage === 'payment' && renderPaymentMethods()}
         {currentPage === 'processing' && renderProcessing()}
+      </Modal>
+
+      {/* Membership Purchase Modal */}
+      <Modal
+        isOpen={showMembershipModal}
+        onClose={() => !isMembershipProcessing && setShowMembershipModal(false)}
+        title="Purchase Monthly Pass"
+        maxWidth="max-w-md"
+      >
+        <div className="space-y-6">
+          {/* Pass Details */}
+          <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-lg p-6">
+            <div className="text-center">
+              <Shield className="text-purple-600 mx-auto mb-3" size={32} />
+              <h3 className="text-lg font-bold text-purple-900 mb-2">Monthly Pass</h3>
+              <div className="text-3xl font-bold text-purple-800 mb-2">
+                {booking?.vehicleType === 'two-wheeler' ? '₹750' : '₹1000'}
+              </div>
+              <p className="text-sm text-purple-700">Valid for 30 days from purchase</p>
+            </div>
+            
+            <div className="mt-4 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Customer:</span>
+                <span className="font-medium">{booking?.customerName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Vehicle Type:</span>
+                <span className="font-medium capitalize">{booking?.vehicleType?.replace('-', ' ')}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Benefits:</span>
+                <span className="font-medium text-green-600">Free Parking</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Payment Method Selection */}
+          <div className="space-y-4">
+            <h4 className="font-semibold text-gray-900">Select Payment Method:</h4>
+            
+            {/* Cash Payment */}
+            <button
+              onClick={() => setMembershipPaymentMethod('cash')}
+              className={`w-full p-4 rounded-lg border-2 transition-all ${
+                membershipPaymentMethod === 'cash'
+                  ? 'border-green-500 bg-green-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <DollarSign className={membershipPaymentMethod === 'cash' ? 'text-green-600' : 'text-gray-400'} size={20} />
+                <div className="text-left">
+                  <h5 className="font-semibold text-gray-900">Cash Payment</h5>
+                  <p className="text-sm text-gray-600">Collect cash from customer</p>
+                </div>
+                {membershipPaymentMethod === 'cash' && (
+                  <CheckCircle className="text-green-500 ml-auto" size={20} />
+                )}
+              </div>
+            </button>
+
+            {/* UPI Payment */}
+            <button
+              onClick={() => setMembershipPaymentMethod('upi')}
+              className={`w-full p-4 rounded-lg border-2 transition-all ${
+                membershipPaymentMethod === 'upi'
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <QrCode className={membershipPaymentMethod === 'upi' ? 'text-blue-600' : 'text-gray-400'} size={20} />
+                <div className="text-left">
+                  <h5 className="font-semibold text-gray-900">UPI Payment</h5>
+                  <p className="text-sm text-gray-600">Customer pays via UPI QR code</p>
+                </div>
+                {membershipPaymentMethod === 'upi' && (
+                  <CheckCircle className="text-blue-500 ml-auto" size={20} />
+                )}
+              </div>
+            </button>
+          </div>
+
+          {/* UPI QR Code Display */}
+          {membershipPaymentMethod === 'upi' && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+              <h5 className="font-semibold text-blue-900 mb-3">Show QR Code to Customer</h5>
+              <div className="bg-white p-3 rounded-lg inline-block border shadow-sm">
+                <img 
+                  src="/PaymentQR.png" 
+                  alt="Payment QR Code" 
+                  className="w-32 h-32 object-contain"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextElementSibling.style.display = 'flex';
+                  }}
+                />
+                <div className="w-32 h-32 bg-gray-100 flex items-center justify-center rounded-lg" style={{display: 'none'}}>
+                  <QrCode className="text-gray-400" size={40} />
+                </div>
+              </div>
+              <p className="text-sm text-blue-700 mt-2 font-medium">
+                Amount: {booking?.vehicleType === 'two-wheeler' ? '₹750' : '₹1000'}
+              </p>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex gap-3 pt-4 border-t">
+            <Button
+              variant="outline"
+              onClick={() => setShowMembershipModal(false)}
+              className="flex-1"
+              disabled={isMembershipProcessing}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleMembershipPurchase}
+              disabled={!membershipPaymentMethod || isMembershipProcessing}
+              className="flex-1 bg-purple-600 hover:bg-purple-700 text-white"
+            >
+              {isMembershipProcessing ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Processing...
+                </>
+              ) : (
+                'Purchase Pass'
+              )}
+            </Button>
+          </div>
+        </div>
       </Modal>
 
       {/* Delete Confirmation Modal */}

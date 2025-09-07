@@ -9,7 +9,9 @@ import {
   Eye,
   Search,
   CheckCircle,
-  Download
+  Download,
+  Shield,
+  CreditCard
 } from 'lucide-react';
 import BookingInfoModal from '../components/Booking/BookingInfoModal';
 import Button from '../components/Common/Button';
@@ -17,6 +19,101 @@ import { formatCurrency } from '../utils/calculations';
 import { exportBookingsToPDF } from '../utils/pdfExport';
 import apiService from '../services/api';
 import { useSite } from '../contexts/SiteContext';
+
+// Helper function to migrate existing localStorage data to include isActive flag
+const migrateLocalStorageData = () => {
+  try {
+    const localPurchases = JSON.parse(localStorage.getItem('membershipPurchases') || '[]');
+    let hasChanges = false;
+    
+    const migratedPurchases = localPurchases.map(purchase => {
+      if (purchase.isActive === undefined) {
+        hasChanges = true;
+        return { ...purchase, isActive: true }; // Default existing purchases to active
+      }
+      return purchase;
+    });
+    
+    if (hasChanges) {
+      localStorage.setItem('membershipPurchases', JSON.stringify(migratedPurchases));
+      console.log('Migrated localStorage data to include isActive flag');
+    }
+    
+    return migratedPurchases;
+  } catch (error) {
+    console.error('Error migrating localStorage data:', error);
+    return [];
+  }
+};
+
+// Helper function to calculate membership analytics from localStorage
+const calculateLocalMembershipAnalytics = (siteId, startDateTime, endDateTime, currentUser = null) => {
+  try {
+    const localPurchases = migrateLocalStorageData(); // Migrate data first
+    console.log('calculateLocalMembershipAnalytics - All purchases in storage:', localPurchases);
+    
+    const startDate = new Date(startDateTime);
+    const endDate = new Date(endDateTime);
+    
+    console.log('calculateLocalMembershipAnalytics - Filtering by:', {
+      siteId,
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+      operatorId: currentUser?.operatorId,
+      userRole: currentUser?.role
+    });
+    
+    // Filter all purchases that match date, site, and operator criteria
+    const allFilteredPurchases = localPurchases.filter(purchase => {
+      const purchaseDate = new Date(purchase.purchaseDate);
+      
+      // More lenient site matching - include customer_management purchases for all sites
+      const matchesSite = !siteId || 
+                         purchase.siteId === siteId || 
+                         purchase.siteId === 'unknown' || 
+                         purchase.siteId === 'customer_management';
+      
+      const matchesDate = purchaseDate >= startDate && purchaseDate <= endDate;
+      
+      // Operator filtering - only for non-admin users
+      let matchesOperator = true;
+      if (currentUser && currentUser.role !== 'admin') {
+        // For operators, only show their own membership sales
+        matchesOperator = purchase.operatorId === currentUser.operatorId;
+        console.log(`Operator filter: purchase.operatorId=${purchase.operatorId}, currentUser.operatorId=${currentUser.operatorId}, matches=${matchesOperator}`);
+      }
+      
+      return matchesSite && matchesDate && matchesOperator;
+    });
+    
+    // Separate active and all purchases for different calculations
+    const activePurchases = allFilteredPurchases.filter(purchase => purchase.isActive !== false);
+    
+    console.log('calculateLocalMembershipAnalytics - Purchase analysis:', {
+      allPurchases: allFilteredPurchases.length,
+      activePurchases: activePurchases.length,
+      deactivatedPurchases: allFilteredPurchases.length - activePurchases.length
+    });
+    
+    // Count only active memberships
+    const count = activePurchases.length;
+    
+    // Revenue includes ALL purchases (active and deactivated) - money was already received
+    const revenue = allFilteredPurchases.reduce((total, purchase) => total + (purchase.amount || 0), 0);
+    
+    console.log('calculateLocalMembershipAnalytics - Final result:', { 
+      activeMembershipCount: count, 
+      totalRevenue: revenue, 
+      activePurchases: activePurchases.length,
+      allPurchases: allFilteredPurchases.length
+    });
+    
+    return { count, revenue, purchases: activePurchases };
+  } catch (error) {
+    console.error('Error calculating local membership analytics:', error);
+    return { count: 0, revenue: 0, purchases: [] };
+  }
+};
 
 const Analytics = () => {
   const [dateRange, setDateRange] = useState({
@@ -29,7 +126,9 @@ const Analytics = () => {
     totalBookings: 0,
     totalRevenue: 0,
     activeBookings: 0,
-    completedBookings: 0
+    completedBookings: 0,
+    membershipSales: 0,
+    membershipRevenue: 0
   });
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
@@ -39,6 +138,19 @@ const Analytics = () => {
   const [exportLoading, setExportLoading] = useState(false);
 
   const { currentSite } = useSite();
+  
+  // Get current user for operator-specific filtering
+  const getCurrentUser = () => {
+    try {
+      const userData = localStorage.getItem('parkingOperator');
+      return userData ? JSON.parse(userData) : null;
+    } catch (error) {
+      console.error('Error parsing user data:', error);
+      return null;
+    }
+  };
+
+  const currentUser = getCurrentUser();
 
   // Fetch analytics data when date range or site changes
   useEffect(() => {
@@ -46,6 +158,68 @@ const Analytics = () => {
       fetchAnalyticsData();
     }
   }, [dateRange, paymentMethodFilter, currentSite]);
+
+  // Listen for membership purchases and deactivations to refresh analytics
+  useEffect(() => {
+    const handleMembershipPurchase = (event) => {
+      console.log('=== Analytics - Membership purchased event received ===');
+      console.log('Analytics - Event detail:', event.detail);
+      console.log('Analytics - Current analytics before update:', analytics);
+      
+      // Immediately update analytics with the new purchase
+      if (event.detail.purchase) {
+        const purchase = event.detail.purchase;
+        console.log('Analytics - Purchase object:', purchase);
+        console.log('Analytics - Updating analytics with:', {
+          newActiveMemberships: analytics.membershipSales + 1,
+          newRevenue: analytics.membershipRevenue + purchase.amount
+        });
+        
+        setAnalytics(prev => {
+          const updated = {
+            ...prev,
+            membershipSales: prev.membershipSales + 1,
+            membershipRevenue: prev.membershipRevenue + purchase.amount
+          };
+          console.log('Analytics - Updated analytics:', updated);
+          return updated;
+        });
+      } else {
+        console.log('Analytics - No purchase object in event detail');
+      }
+      
+      // Also refresh from API after delay
+      console.log('Analytics - Setting timeout to refresh analytics data in 1 second');
+      setTimeout(() => {
+        if (currentSite?._id || currentSite?.siteId) {
+          console.log('Analytics - Refreshing analytics data from API after event');
+          fetchAnalyticsData();
+        }
+      }, 1000);
+    };
+
+    const handleMembershipDeactivation = (event) => {
+      console.log('=== Analytics - Membership deactivated event received ===');
+      console.log('Analytics - Deactivation event detail:', event.detail);
+      console.log('Analytics - Note: Revenue will NOT be reduced as payment was already processed');
+      
+      // Refresh analytics data to reflect the deactivation (count will decrease but revenue stays)
+      setTimeout(() => {
+        if (currentSite?._id || currentSite?.siteId) {
+          console.log('Analytics - Refreshing analytics data after deactivation (count only, revenue preserved)');
+          fetchAnalyticsData();
+        }
+      }, 500);
+    };
+
+    window.addEventListener('membershipPurchased', handleMembershipPurchase);
+    window.addEventListener('membershipDeactivated', handleMembershipDeactivation);
+    
+    return () => {
+      window.removeEventListener('membershipPurchased', handleMembershipPurchase);
+      window.removeEventListener('membershipDeactivated', handleMembershipDeactivation);
+    };
+  }, [currentSite]);
 
   const fetchAnalyticsData = async () => {
     setLoading(true);
@@ -56,34 +230,90 @@ const Analytics = () => {
       const startDateTime = new Date(dateRange.startDate + 'T00:00:00').toISOString();
       const endDateTime = new Date(dateRange.endDate + 'T23:59:59').toISOString();
 
-      // Fetch bookings and dashboard analytics in parallel
-      const [bookingsResponse, dashboardResponse] = await Promise.all([
-        apiService.getBookings({
-          siteId,
-          dateFrom: startDateTime,
-          dateTo: endDateTime,
-          limit: 1000 // Get all bookings for the date range
-        }),
-        apiService.getDashboardAnalytics({
+      let bookingsResponse = null;
+      let dashboardResponse = null;
+
+      // For operators, handle API permission errors gracefully
+      if (currentUser && currentUser.role !== 'admin') {
+        console.log('Operator detected - using fallback data sources');
+        
+        try {
+          // Try to fetch bookings (operators might have access to this)
+          bookingsResponse = await apiService.getBookings({
+            siteId,
+            dateFrom: startDateTime,
+            dateTo: endDateTime,
+            limit: 1000
+          });
+        } catch (bookingError) {
+          console.log('Booking API not accessible for operator, using fallback');
+          bookingsResponse = { data: { bookings: [] } };
+        }
+
+        // Skip dashboard analytics for operators (use local calculation)
+        dashboardResponse = { data: { summary: {}, insights: {} } };
+      } else {
+        // Admin users - fetch normally
+        [bookingsResponse, dashboardResponse] = await Promise.all([
+          apiService.getBookings({
+            siteId,
+            dateFrom: startDateTime,
+            dateTo: endDateTime,
+            limit: 1000
+          }),
+          apiService.getDashboardAnalytics({
+            siteId,
+            dateFrom: startDateTime,
+            dateTo: endDateTime
+          })
+        ]);
+      }
+
+      // Fetch membership analytics separately with error handling
+      let membershipResponse = null;
+      try {
+        membershipResponse = await apiService.getMembershipAnalytics({
           siteId,
           dateFrom: startDateTime,
           dateTo: endDateTime
-        })
-      ]);
+        });
+      } catch (membershipError) {
+        console.error('Failed to fetch membership analytics:', membershipError);
+        // Continue without membership data rather than failing completely
+      }
 
       const fetchedBookings = bookingsResponse.data?.bookings || [];
-      setBookings(fetchedBookings);
+      
+      // Filter bookings by operator if not admin
+      let operatorFilteredBookings = fetchedBookings;
+      if (currentUser && currentUser.role !== 'admin') {
+        operatorFilteredBookings = fetchedBookings.filter(booking => 
+          booking.operatorId === currentUser.operatorId
+        );
+        console.log(`Operator ${currentUser.operatorId} - Filtered ${operatorFilteredBookings.length} bookings from ${fetchedBookings.length} total`);
+      }
+      
+      setBookings(operatorFilteredBookings);
       
       const dashboardData = dashboardResponse.data?.summary || {};
+      const membershipData = membershipResponse?.data || {};
+      
+      // Debug: Log membership analytics response
+      console.log('Membership Analytics Response:', membershipResponse);
+      console.log('Membership Data:', membershipData);
+      
+      // Debug: Check localStorage membership purchases
+      const localStoragePurchases = JSON.parse(localStorage.getItem('membershipPurchases') || '[]');
+      console.log('Analytics - Local Storage Purchases:', localStoragePurchases);
       
       // Filter bookings based on payment method filter for analytics calculation
-      const filteredBookingsForAnalytics = fetchedBookings.filter(booking => {
+      const filteredBookingsForAnalytics = operatorFilteredBookings.filter(booking => {
         if (paymentMethodFilter === 'all') return true;
         return (booking.payment?.method === paymentMethodFilter || booking.paymentMethod === paymentMethodFilter);
       });
       
-      // Calculate metrics from filtered bookings
-      const calculatedRevenue = filteredBookingsForAnalytics.reduce((total, booking) => {
+      // Calculate parking revenue from filtered bookings
+      const calculatedParkingRevenue = filteredBookingsForAnalytics.reduce((total, booking) => {
         // Skip membership payments as they are free (no revenue)
         if (booking.payment?.method === 'membership' || booking.paymentMethod === 'membership') {
           return total;
@@ -91,12 +321,40 @@ const Analytics = () => {
         const amount = booking.payment?.amount || booking.totalAmount || 0;
         return total + amount;
       }, 0);
+
+      // Get membership analytics data from API - try different possible response formats
+      let membershipSales = membershipData.totalMemberships || 
+                           membershipData.membershipCount || 
+                           membershipData.count || 
+                           membershipData.total || 0;
+      
+      let membershipRevenue = membershipData.totalRevenue || 
+                             membershipData.revenue || 
+                             membershipData.totalAmount || 
+                             membershipData.amount || 0;
+
+      // Fallback: Calculate from local storage if API doesn't return data
+      if (membershipSales === 0 && membershipRevenue === 0) {
+        const localMemberships = calculateLocalMembershipAnalytics(
+          currentSite?._id || currentSite?.siteId,
+          startDateTime,
+          endDateTime,
+          currentUser
+        );
+        membershipSales = localMemberships.count;
+        membershipRevenue = localMemberships.revenue;
+        console.log('API returned no membership data, using localStorage fallback:', localMemberships);
+      } else {
+        console.log('Using API membership data:', { membershipSales, membershipRevenue });
+      }
       
       setAnalytics({
         totalBookings: filteredBookingsForAnalytics.length,
-        totalRevenue: calculatedRevenue,
+        totalRevenue: calculatedParkingRevenue, // Parking revenue only
         activeBookings: filteredBookingsForAnalytics.filter(b => b.status === 'active').length,
-        completedBookings: filteredBookingsForAnalytics.filter(b => b.status === 'completed').length
+        completedBookings: filteredBookingsForAnalytics.filter(b => b.status === 'completed').length,
+        membershipSales: membershipSales,
+        membershipRevenue: membershipRevenue
       });
 
     } catch (error) {
@@ -200,9 +458,16 @@ const Analytics = () => {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Analytics</h1>
-          <p className="text-gray-600">
-            Site: {currentSite?.siteName || 'No site selected'}
-          </p>
+          <div className="flex items-center space-x-4">
+            <p className="text-gray-600">
+              Site: {currentSite?.siteName || 'No site selected'}
+            </p>
+            {currentUser && currentUser.role !== 'admin' && (
+              <div className="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-sm font-medium">
+                Operator: {currentUser.operatorId}
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex-shrink-0">
           <Button
@@ -277,8 +542,8 @@ const Analytics = () => {
         </div>
       </div>
 
-      {/* Quick Insights - 2x2 Grid */}
-      <div className="grid grid-cols-2 gap-3 md:gap-4">
+      {/* Quick Insights - 2x3 Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 md:p-4">
           <div className="flex items-center space-x-2 md:space-x-3">
             <div className="bg-purple-100 p-2 rounded-lg flex-shrink-0">
@@ -325,6 +590,32 @@ const Analytics = () => {
             <div className="min-w-0 flex-1">
               <p className="text-xs md:text-sm text-gray-600">Completed Bookings</p>
               <p className="text-lg md:text-xl font-bold text-gray-900">{analytics.completedBookings}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 md:p-4">
+          <div className="flex items-center space-x-2 md:space-x-3">
+            <div className="bg-purple-100 p-2 rounded-lg flex-shrink-0">
+              <Shield className="text-purple-600" size={16} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs md:text-sm text-gray-600">Total Active Memberships</p>
+              <p className="text-lg md:text-xl font-bold text-gray-900">{analytics.membershipSales}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 md:p-4">
+          <div className="flex items-center space-x-2 md:space-x-3">
+            <div className="bg-indigo-100 p-2 rounded-lg flex-shrink-0">
+              <CreditCard className="text-indigo-600" size={16} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs md:text-sm text-gray-600">Membership Revenue</p>
+              <p className="text-sm md:text-lg font-bold text-gray-900 break-words">
+                {formatCurrency(analytics.membershipRevenue)}
+              </p>
             </div>
           </div>
         </div>

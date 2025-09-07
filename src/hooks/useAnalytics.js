@@ -65,6 +65,19 @@ export const useAnalytics = (filters = {}) => {
   });
 
   const { currentSite } = useSite();
+  
+  // Get current user from localStorage
+  const getCurrentUser = () => {
+    try {
+      const userData = localStorage.getItem('parkingOperator');
+      return userData ? JSON.parse(userData) : null;
+    } catch (error) {
+      console.error('Error parsing user data:', error);
+      return null;
+    }
+  };
+
+  const currentUser = getCurrentUser();
 
   // Convert filter dateRange to actual dates
   const dateFilters = useMemo(() => {
@@ -118,6 +131,18 @@ export const useAnalytics = (filters = {}) => {
           siteId: currentSite?._id || currentSite?.siteId,
           period: 'day' // Default grouping
         };
+
+        // Add operator-specific filtering for non-admin users
+        if (currentUser) {
+          if (currentUser.role !== 'admin') {
+            // For operators, filter by their operatorId only
+            apiFilters.operatorId = currentUser.operatorId;
+            console.log(`Filtering analytics for operator: ${currentUser.operatorId}`);
+          } else {
+            // For admins, they can see all data (no operator filter applied)
+            console.log('Admin user - showing all operators data');
+          }
+        }
 
         // Remove null values
         Object.keys(apiFilters).forEach(key => {
@@ -207,7 +232,7 @@ export const useAnalytics = (filters = {}) => {
     };
 
     fetchAnalytics();
-  }, [filters.dateRange, currentSite, dateFilters]);
+  }, [filters.dateRange, currentSite, dateFilters, currentUser?.operatorId, currentUser?.role]);
 
   return analytics;
 };
