@@ -158,7 +158,7 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
     if (!isActive) return false;
     
     // Check if existing membership covers all selected vehicle types
-    const existingVehicleTypes = customer.membership?.vehicleTypes || [customer.membership?.vehicleType || 'two-wheeler'];
+    const existingVehicleTypes = customer.membership?.vehicleTypes || ['two-wheeler', 'four-wheeler'];
     
     return selectedVehicleTypes.every(selectedType => existingVehicleTypes.includes(selectedType));
   };
@@ -171,7 +171,7 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
       return membershipData.vehicleTypes; // All types are new if no active membership
     }
     
-    const existingVehicleTypes = customer.membership?.vehicleTypes || [customer.membership?.vehicleType || 'two-wheeler'];
+    const existingVehicleTypes = customer.membership?.vehicleTypes || ['two-wheeler', 'four-wheeler'];
     return membershipData.vehicleTypes.filter(vt => !existingVehicleTypes.includes(vt));
   };
   
@@ -224,7 +224,7 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
                   <h4 className="font-semibold text-green-900">Active Membership - {membershipData.vehicleTypes.map(vt => vt.replace('-', ' ').toUpperCase()).join(', ')}</h4>
                   <div className="space-y-1 text-sm text-green-700">
                     <p><strong>Type:</strong> {customer.membership.membershipType}</p>
-                    <p><strong>Vehicle:</strong> {customer.membership?.vehicleType || 'two-wheeler'}</p>
+                    <p><strong>Covers:</strong> {customer.membership?.vehicleTypes?.join(', ') || 'All vehicle types'}</p>
                     <p><strong>Expires:</strong> {formatDate(customer.membership.expiryDate)}</p>
                     {daysRemaining > 0 ? (
                       <p className="flex items-center space-x-1">
@@ -265,10 +265,10 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
               <div className="flex items-center space-x-3">
                 <Shield className="text-blue-600" size={20} />
                 <div>
-                  <h4 className="font-semibold text-blue-900">Active Membership - {(customer.membership?.vehicleType || 'two-wheeler').replace('-', ' ').toUpperCase()}</h4>
+                  <h4 className="font-semibold text-blue-900">Active Membership - {(customer.membership?.vehicleTypes?.join(' + ') || 'All Types').replace(/-/g, ' ').toUpperCase()}</h4>
                   <div className="space-y-1 text-sm text-blue-700">
                     <p><strong>Type:</strong> {customer.membership.membershipType}</p>
-                    <p><strong>Vehicle:</strong> {customer.membership?.vehicleType || 'two-wheeler'}</p>
+                    <p><strong>Covers:</strong> {customer.membership?.vehicleTypes?.join(', ') || 'All vehicle types'}</p>
                     <p><strong>Expires:</strong> {formatDate(customer.membership.expiryDate)}</p>
                     {daysRemaining > 0 ? (
                       <p className="flex items-center space-x-1">
@@ -326,9 +326,9 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
               <div>
                 <h4 className="font-semibold text-blue-900">Different Vehicle Type Membership</h4>
                 <div className="text-sm text-blue-700">
-                  <p>Customer has active <strong>{customer.membership?.vehicleType || 'two-wheeler'}</strong> membership</p>
+                  <p>Customer has active <strong>{customer.membership?.vehicleTypes?.join(', ') || 'all vehicle types'}</strong> membership</p>
                   <p>Selected: <strong>{membershipData.vehicleTypes.join(', ')}</strong> membership</p>
-                  <p className="text-xs mt-1">You can create multiple memberships for different vehicle types</p>
+                  <p className="text-xs mt-1">Membership works across all customer vehicles</p>
                 </div>
               </div>
             </div>
@@ -360,7 +360,7 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
               {hasAnyActiveMembership && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                   <p className="text-sm text-blue-800">
-                    <strong>Current membership covers:</strong> {(customer.membership?.vehicleTypes || [customer.membership?.vehicleType || 'two-wheeler']).join(', ')}
+                    <strong>Current membership covers:</strong> {customer.membership?.vehicleTypes?.join(', ') || 'All vehicle types'}
                   </p>
                   <p className="text-xs text-blue-600 mt-1">
                     Select additional vehicle types to extend your membership coverage
@@ -377,7 +377,7 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
                     <input
                       type="checkbox"
                       checked={membershipData.vehicleTypes.includes('two-wheeler')}
-                      disabled={hasAnyActiveMembership && (customer.membership?.vehicleTypes || [customer.membership?.vehicleType]).includes('two-wheeler')}
+                      disabled={hasAnyActiveMembership && customer.membership?.vehicleTypes?.includes('two-wheeler')}
                       onChange={(e) => {
                         const isChecked = e.target.checked;
                         setMembershipData(prev => ({
@@ -390,12 +390,12 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
                       className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     />
                     <span className={`ml-2 text-sm ${
-                      hasAnyActiveMembership && (customer.membership?.vehicleTypes || [customer.membership?.vehicleType]).includes('two-wheeler')
+                      hasAnyActiveMembership && customer.membership?.vehicleTypes?.includes('two-wheeler')
                         ? 'text-gray-500'
                         : 'text-gray-900'
                     }`}>
                       Two Wheeler (₹750/month)
-                      {hasAnyActiveMembership && (customer.membership?.vehicleTypes || [customer.membership?.vehicleType]).includes('two-wheeler') && (
+                      {hasAnyActiveMembership && customer.membership?.vehicleTypes?.includes('two-wheeler') && (
                         <span className="text-xs text-green-600 ml-1">✓ Already covered</span>
                       )}
                     </span>
@@ -404,7 +404,7 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
                     <input
                       type="checkbox"
                       checked={membershipData.vehicleTypes.includes('four-wheeler')}
-                      disabled={hasAnyActiveMembership && (customer.membership?.vehicleTypes || [customer.membership?.vehicleType]).includes('four-wheeler')}
+                      disabled={hasAnyActiveMembership && customer.membership?.vehicleTypes?.includes('four-wheeler')}
                       onChange={(e) => {
                         const isChecked = e.target.checked;
                         setMembershipData(prev => ({
@@ -417,12 +417,12 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
                       className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     />
                     <span className={`ml-2 text-sm ${
-                      hasAnyActiveMembership && (customer.membership?.vehicleTypes || [customer.membership?.vehicleType]).includes('four-wheeler')
+                      hasAnyActiveMembership && customer.membership?.vehicleTypes?.includes('four-wheeler')
                         ? 'text-gray-500'
                         : 'text-gray-900'
                     }`}>
                       Four Wheeler (₹1000/month)
-                      {hasAnyActiveMembership && (customer.membership?.vehicleTypes || [customer.membership?.vehicleType]).includes('four-wheeler') && (
+                      {hasAnyActiveMembership && customer.membership?.vehicleTypes?.includes('four-wheeler') && (
                         <span className="text-xs text-green-600 ml-1">✓ Already covered</span>
                       )}
                     </span>

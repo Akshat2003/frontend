@@ -120,7 +120,7 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
                               new Date(customerData.membership.expiryDate) > new Date();
   
   // Check if membership covers current booking vehicle type (use validation result if available)
-  const membershipVehicleTypes = customerData?.membership?.vehicleTypes || [customerData?.membership?.vehicleType || 'two-wheeler'];
+  const membershipVehicleTypes = customerData?.membership?.vehicleTypes || ['two-wheeler', 'four-wheeler'];
   const vehicleTypeMatches = customerData?.membershipValidated === true ? true : membershipVehicleTypes.includes(booking?.vehicleType);
   
   // Membership is valid only if active AND covers the vehicle type OR if validation passed

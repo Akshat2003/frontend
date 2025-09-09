@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { CreditCard, User, Phone, Car, Shield, DollarSign, QrCode, CheckCircle, ArrowLeft } from 'lucide-react';
+import { CreditCard, User, Phone, Car, Shield, DollarSign, QrCode, CheckCircle, ArrowLeft, AlertCircle } from 'lucide-react';
 import Button from '../components/Common/Button';
 import Input from '../components/Common/Input';
 import Select from '../components/Common/Select';
 import { formatCurrency } from '../utils/calculations';
+import apiService from '../services/api';
 
 const MembershipPurchase = () => {
   const [currentPage, setCurrentPage] = useState('customer-details');
@@ -18,6 +19,8 @@ const MembershipPurchase = () => {
   const [paymentStatus, setPaymentStatus] = useState('pending');
   const [isProcessing, setIsProcessing] = useState(false);
   const [errors, setErrors] = useState({});
+  const [createdMembership, setCreatedMembership] = useState(null);
+  const [createdCustomer, setCreatedCustomer] = useState(null);
 
   const vehicleTypeOptions = [
     { value: 'two-wheeler', label: 'Two Wheeler' },
@@ -62,48 +65,103 @@ const MembershipPurchase = () => {
   };
 
   const handlePaymentProcess = async () => {
+    if (!paymentMethod) {
+      setErrors({ payment: 'Please select a payment method' });
+      return;
+    }
+
     setIsProcessing(true);
     setPaymentStatus('processing');
+    setErrors({});
     
-    // Simulate payment processing
-    setTimeout(() => {
+    try {
+      // Step 1: Search for existing customer by phone number
+      let customerId = null;
+      
       try {
-        // Here you would integrate with your actual payment processing logic
-        // For now, we'll simulate success and update local analytics
+        const searchResponse = await apiService.searchCustomers(customerData.phoneNumber, 'phone');
+        if (searchResponse.data.customers && searchResponse.data.customers.length > 0) {
+          customerId = searchResponse.data.customers[0]._id;
+          setCreatedCustomer(searchResponse.data.customers[0]);
+        }
+      } catch (searchError) {
+        console.log('Customer not found, will create new one');
+      }
+      
+      // Step 2: Create new customer if not found
+      if (!customerId) {
+        const nameParts = customerData.firstName.trim().split(' ');
+        const firstName = nameParts[0];
+        const lastName = nameParts.slice(1).join(' ') || firstName;
         
-        const membershipData = {
+        const newCustomerData = {
+          firstName,
+          lastName,
+          phoneNumber: customerData.phoneNumber,
+          email: customerData.email || null,
+          vehicles: [{
+            vehicleNumber: customerData.vehicleNumber.toUpperCase(),
+            vehicleType: customerData.vehicleType,
+            isActive: true
+          }]
+        };
+        
+        const customerResponse = await apiService.createCustomer(newCustomerData);
+        customerId = customerResponse.data.customer._id;
+        setCreatedCustomer(customerResponse.data.customer);
+      }
+      
+      // Step 3: Create membership for the customer
+      const membershipData = {
+        membershipType: 'monthly',
+        validityTerm: 1, // 1 month
+        vehicleTypes: [customerData.vehicleType] // Array with current vehicle type
+      };
+      
+      const membershipResponse = await apiService.createMembership(customerId, membershipData);
+      setCreatedMembership(membershipResponse.data.customer.membership);
+      
+      // Step 4: Update analytics (local fallback)
+      const existingAnalytics = JSON.parse(localStorage.getItem('membershipAnalytics') || '{"count": 0, "revenue": 0}');
+      existingAnalytics.count += 1;
+      existingAnalytics.revenue += membershipPrice;
+      localStorage.setItem('membershipAnalytics', JSON.stringify(existingAnalytics));
+      
+      // Step 5: Trigger analytics update event
+      window.dispatchEvent(new CustomEvent('membershipPurchased', { 
+        detail: {
           customerName: customerData.firstName,
           phoneNumber: customerData.phoneNumber,
-          email: customerData.email,
           vehicleNumber: customerData.vehicleNumber,
           vehicleType: customerData.vehicleType,
           amount: membershipPrice,
           paymentMethod: paymentMethod,
-          purchaseDate: new Date().toISOString(),
-          expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() // 30 days from now
-        };
-        
-        // Update localStorage analytics (fallback for API restrictions)
-        const existingAnalytics = JSON.parse(localStorage.getItem('membershipAnalytics') || '{"count": 0, "revenue": 0}');
-        existingAnalytics.count += 1;
-        existingAnalytics.revenue += membershipPrice;
-        localStorage.setItem('membershipAnalytics', JSON.stringify(existingAnalytics));
-        
-        // Trigger analytics update event
-        window.dispatchEvent(new CustomEvent('membershipPurchased', { 
-          detail: membershipData 
-        }));
-        
-        setPaymentStatus('completed');
-        setCurrentPage('success');
-        setIsProcessing(false);
-        
-      } catch (error) {
-        console.error('Payment failed:', error);
-        setPaymentStatus('failed');
-        setIsProcessing(false);
+          membership: membershipResponse.data.customer.membership
+        }
+      }));
+      
+      setPaymentStatus('completed');
+      setCurrentPage('success');
+      
+    } catch (error) {
+      console.error('Payment processing failed:', error);
+      setPaymentStatus('failed');
+      
+      // Set specific error messages based on the error
+      if (error.statusCode === 400) {
+        setErrors({ payment: error.message });
+      } else if (error.statusCode === 422 && error.validationErrors) {
+        const validationErrors = {};
+        error.validationErrors.forEach(err => {
+          validationErrors[err.field] = err.message;
+        });
+        setErrors(validationErrors);
+      } else {
+        setErrors({ payment: 'Failed to create membership. Please try again.' });
       }
-    }, 2000);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleInputChange = (field, value) => {
@@ -325,12 +383,26 @@ const MembershipPurchase = () => {
         </div>
       )}
 
+      {/* Error Display */}
+      {errors.payment && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center space-x-2">
+            <AlertCircle className="text-red-600 flex-shrink-0" size={20} />
+            <p className="text-red-700 text-sm">{errors.payment}</p>
+          </div>
+        </div>
+      )}
+
       {/* Action Buttons */}
       <div className="flex space-x-3">
         <Button 
           variant="outline" 
-          onClick={() => setCurrentPage('customer-details')} 
+          onClick={() => {
+            setCurrentPage('customer-details');
+            setErrors({});
+          }} 
           className="flex-1"
+          disabled={isProcessing}
         >
           <ArrowLeft size={16} className="mr-2" />
           Back
@@ -340,7 +412,14 @@ const MembershipPurchase = () => {
           disabled={!paymentMethod || isProcessing}
           className="flex-1"
         >
-          {paymentMethod === 'upi' ? 'Confirm UPI Payment' : 'Collect Cash'}
+          {isProcessing ? (
+            <>
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+              Processing...
+            </>
+          ) : (
+            paymentMethod === 'upi' ? 'Confirm UPI Payment' : 'Collect Cash'
+          )}
         </Button>
       </div>
     </div>
@@ -354,12 +433,31 @@ const MembershipPurchase = () => {
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
             <h3 className="text-xl font-semibold text-gray-900 mb-2">Processing Payment...</h3>
             <p className="text-gray-600">Creating membership for {customerData.firstName}</p>
+            <p className="text-sm text-gray-500 mt-2">This may take a few moments...</p>
           </div>
         ) : (
           <div className="bg-red-50 p-8 rounded-lg">
-            <div className="text-red-600 mx-auto mb-4" size={48}>❌</div>
+            <div className="flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mx-auto mb-4">
+              <AlertCircle className="text-red-600" size={32} />
+            </div>
             <h3 className="text-xl font-semibold text-red-900 mb-2">Payment Failed!</h3>
-            <p className="text-red-700">Payment processing failed. Please try again.</p>
+            {errors.payment ? (
+              <p className="text-red-700 mb-4">{errors.payment}</p>
+            ) : (
+              <p className="text-red-700 mb-4">Payment processing failed. Please try again.</p>
+            )}
+            <Button
+              onClick={() => {
+                setCurrentPage('payment');
+                setPaymentStatus('pending');
+                setErrors({});
+              }}
+              variant="outline"
+              className="mt-4"
+            >
+              <ArrowLeft size={16} className="mr-2" />
+              Back to Payment
+            </Button>
           </div>
         )}
       </div>
@@ -380,6 +478,8 @@ const MembershipPurchase = () => {
       setPaymentStatus('pending');
       setIsProcessing(false);
       setErrors({});
+      setCreatedMembership(null);
+      setCreatedCustomer(null);
     };
 
     return (
@@ -391,12 +491,41 @@ const MembershipPurchase = () => {
           <h1 className="text-2xl font-bold text-green-900 mb-4">Membership Created Successfully!</h1>
           <p className="text-green-700 mb-6">Monthly parking pass has been activated</p>
           
+          {/* Membership Credentials */}
+          {createdMembership && (
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-6 mb-6">
+              <h3 className="font-semibold text-purple-900 mb-4 flex items-center justify-center">
+                <Shield className="h-5 w-5 mr-2" />
+                Membership Credentials
+              </h3>
+              <div className="space-y-3">
+                <div className="flex justify-center items-center space-x-4">
+                  <div className="text-center">
+                    <p className="text-sm text-purple-600">Membership Number</p>
+                    <p className="text-2xl font-bold text-purple-900">{createdMembership.membershipNumber}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm text-purple-600">PIN</p>
+                    <p className="text-2xl font-bold text-purple-900">{createdMembership.pin}</p>
+                  </div>
+                </div>
+                <p className="text-xs text-purple-600 bg-purple-100 rounded px-2 py-1 inline-block">
+                  Keep these credentials safe - they're needed for free parking
+                </p>
+              </div>
+            </div>
+          )}
+          
           <div className="bg-white border border-green-200 rounded-lg p-6">
             <h3 className="font-semibold text-gray-900 mb-4">Membership Details</h3>
             <div className="space-y-3 text-sm">
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Customer:</span>
-                <span className="font-medium">{customerData.firstName}</span>
+                <span className="font-medium">{createdCustomer?.fullName || customerData.firstName}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-600">Phone:</span>
+                <span className="font-medium">{customerData.phoneNumber}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Vehicle:</span>
@@ -412,11 +541,20 @@ const MembershipPurchase = () => {
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Valid Until:</span>
-                <span className="font-medium">{new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString()}</span>
+                <span className="font-medium">
+                  {createdMembership?.expiryDate 
+                    ? new Date(createdMembership.expiryDate).toLocaleDateString()
+                    : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString()
+                  }
+                </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Payment Method:</span>
                 <span className="font-medium capitalize">{paymentMethod}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-600">Membership Type:</span>
+                <span className="font-medium capitalize">{createdMembership?.membershipType || 'Monthly'}</span>
               </div>
             </div>
           </div>
