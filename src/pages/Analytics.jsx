@@ -19,101 +19,7 @@ import { formatCurrency } from '../utils/calculations';
 import { exportBookingsToPDF } from '../utils/pdfExport';
 import apiService from '../services/api';
 import { useSite } from '../contexts/SiteContext';
-
-// Helper function to migrate existing localStorage data to include isActive flag
-const migrateLocalStorageData = () => {
-  try {
-    const localPurchases = JSON.parse(localStorage.getItem('membershipPurchases') || '[]');
-    let hasChanges = false;
-    
-    const migratedPurchases = localPurchases.map(purchase => {
-      if (purchase.isActive === undefined) {
-        hasChanges = true;
-        return { ...purchase, isActive: true }; // Default existing purchases to active
-      }
-      return purchase;
-    });
-    
-    if (hasChanges) {
-      localStorage.setItem('membershipPurchases', JSON.stringify(migratedPurchases));
-      console.log('Migrated localStorage data to include isActive flag');
-    }
-    
-    return migratedPurchases;
-  } catch (error) {
-    console.error('Error migrating localStorage data:', error);
-    return [];
-  }
-};
-
-// Helper function to calculate membership analytics from localStorage
-const calculateLocalMembershipAnalytics = (siteId, startDateTime, endDateTime, currentUser = null) => {
-  try {
-    const localPurchases = migrateLocalStorageData(); // Migrate data first
-    console.log('calculateLocalMembershipAnalytics - All purchases in storage:', localPurchases);
-    
-    const startDate = new Date(startDateTime);
-    const endDate = new Date(endDateTime);
-    
-    console.log('calculateLocalMembershipAnalytics - Filtering by:', {
-      siteId,
-      startDate: startDate.toISOString(),
-      endDate: endDate.toISOString(),
-      operatorId: currentUser?.operatorId,
-      userRole: currentUser?.role
-    });
-    
-    // Filter all purchases that match date, site, and operator criteria
-    const allFilteredPurchases = localPurchases.filter(purchase => {
-      const purchaseDate = new Date(purchase.purchaseDate);
-      
-      // More lenient site matching - include customer_management purchases for all sites
-      const matchesSite = !siteId || 
-                         purchase.siteId === siteId || 
-                         purchase.siteId === 'unknown' || 
-                         purchase.siteId === 'customer_management';
-      
-      const matchesDate = purchaseDate >= startDate && purchaseDate <= endDate;
-      
-      // Operator filtering - only for non-admin users
-      let matchesOperator = true;
-      if (currentUser && currentUser.role !== 'admin') {
-        // For operators, only show their own membership sales
-        matchesOperator = purchase.operatorId === currentUser.operatorId;
-        console.log(`Operator filter: purchase.operatorId=${purchase.operatorId}, currentUser.operatorId=${currentUser.operatorId}, matches=${matchesOperator}`);
-      }
-      
-      return matchesSite && matchesDate && matchesOperator;
-    });
-    
-    // Separate active and all purchases for different calculations
-    const activePurchases = allFilteredPurchases.filter(purchase => purchase.isActive !== false);
-    
-    console.log('calculateLocalMembershipAnalytics - Purchase analysis:', {
-      allPurchases: allFilteredPurchases.length,
-      activePurchases: activePurchases.length,
-      deactivatedPurchases: allFilteredPurchases.length - activePurchases.length
-    });
-    
-    // Count only active memberships
-    const count = activePurchases.length;
-    
-    // Revenue includes ALL purchases (active and deactivated) - money was already received
-    const revenue = allFilteredPurchases.reduce((total, purchase) => total + (purchase.amount || 0), 0);
-    
-    console.log('calculateLocalMembershipAnalytics - Final result:', { 
-      activeMembershipCount: count, 
-      totalRevenue: revenue, 
-      activePurchases: activePurchases.length,
-      allPurchases: allFilteredPurchases.length
-    });
-    
-    return { count, revenue, purchases: activePurchases };
-  } catch (error) {
-    console.error('Error calculating local membership analytics:', error);
-    return { count: 0, revenue: 0, purchases: [] };
-  }
-};
+import { useCustomers } from '../hooks/useCustomers';
 
 const Analytics = () => {
   const [dateRange, setDateRange] = useState({
@@ -138,6 +44,7 @@ const Analytics = () => {
   const [exportLoading, setExportLoading] = useState(false);
 
   const { currentSite } = useSite();
+  const { customers, getCustomers } = useCustomers();
   
   // Get current user for operator-specific filtering
   const getCurrentUser = () => {
@@ -159,67 +66,44 @@ const Analytics = () => {
     }
   }, [dateRange, paymentMethodFilter, currentSite]);
 
-  // Listen for membership purchases and deactivations to refresh analytics
+  // Fetch customers data for membership analytics
   useEffect(() => {
-    const handleMembershipPurchase = (event) => {
-      console.log('=== Analytics - Membership purchased event received ===');
-      console.log('Analytics - Event detail:', event.detail);
-      console.log('Analytics - Current analytics before update:', analytics);
-      
-      // Immediately update analytics with the new purchase
-      if (event.detail.purchase) {
-        const purchase = event.detail.purchase;
-        console.log('Analytics - Purchase object:', purchase);
-        console.log('Analytics - Updating analytics with:', {
-          newActiveMemberships: analytics.membershipSales + 1,
-          newRevenue: analytics.membershipRevenue + purchase.amount
-        });
-        
-        setAnalytics(prev => {
-          const updated = {
-            ...prev,
-            membershipSales: prev.membershipSales + 1,
-            membershipRevenue: prev.membershipRevenue + purchase.amount
-          };
-          console.log('Analytics - Updated analytics:', updated);
-          return updated;
-        });
-      } else {
-        console.log('Analytics - No purchase object in event detail');
-      }
-      
-      // Also refresh from API after delay
-      console.log('Analytics - Setting timeout to refresh analytics data in 1 second');
-      setTimeout(() => {
-        if (currentSite?._id || currentSite?.siteId) {
-          console.log('Analytics - Refreshing analytics data from API after event');
-          fetchAnalyticsData();
-        }
-      }, 1000);
-    };
+    getCustomers({ 
+      limit: 1000, // Get all customers
+      sortBy: 'createdAt',
+      sortOrder: 'desc'
+    });
+  }, []);
 
-    const handleMembershipDeactivation = (event) => {
-      console.log('=== Analytics - Membership deactivated event received ===');
-      console.log('Analytics - Deactivation event detail:', event.detail);
-      console.log('Analytics - Note: Revenue will NOT be reduced as payment was already processed');
-      
-      // Refresh analytics data to reflect the deactivation (count will decrease but revenue stays)
-      setTimeout(() => {
-        if (currentSite?._id || currentSite?.siteId) {
-          console.log('Analytics - Refreshing analytics data after deactivation (count only, revenue preserved)');
-          fetchAnalyticsData();
-        }
-      }, 500);
-    };
+  const calculateMembershipAnalytics = () => {
+    if (!customers || customers.length === 0) {
+      return { count: 0, revenue: 0 };
+    }
 
-    window.addEventListener('membershipPurchased', handleMembershipPurchase);
-    window.addEventListener('membershipDeactivated', handleMembershipDeactivation);
-    
-    return () => {
-      window.removeEventListener('membershipPurchased', handleMembershipPurchase);
-      window.removeEventListener('membershipDeactivated', handleMembershipDeactivation);
-    };
-  }, [currentSite]);
+    // Filter customers with active memberships
+    const activeMembers = customers.filter(customer => 
+      customer.hasMembership && 
+      customer.membership && 
+      customer.membership.isActive &&
+      customer.membership.expiryDate &&
+      new Date(customer.membership.expiryDate) > new Date()
+    );
+
+    // For revenue, we'll use a placeholder calculation since we don't have payment data yet
+    // This will be replaced with actual MembershipPayment data once implemented
+    const revenue = activeMembers.reduce((total, member) => {
+      const membershipType = member.membership?.membershipType || 'monthly';
+      const amounts = {
+        monthly: 500,
+        quarterly: 1200,
+        yearly: 4000,
+        premium: 6000
+      };
+      return total + (amounts[membershipType] || 500);
+    }, 0);
+
+    return { count: activeMembers.length, revenue };
+  };
 
   const fetchAnalyticsData = async () => {
     setLoading(true);
@@ -269,19 +153,6 @@ const Analytics = () => {
         ]);
       }
 
-      // Fetch membership analytics separately with error handling
-      let membershipResponse = null;
-      try {
-        membershipResponse = await apiService.getMembershipAnalytics({
-          siteId,
-          dateFrom: startDateTime,
-          dateTo: endDateTime
-        });
-      } catch (membershipError) {
-        console.error('Failed to fetch membership analytics:', membershipError);
-        // Continue without membership data rather than failing completely
-      }
-
       const fetchedBookings = bookingsResponse.data?.bookings || [];
       
       // Filter bookings by operator if not admin
@@ -296,15 +167,6 @@ const Analytics = () => {
       setBookings(operatorFilteredBookings);
       
       const dashboardData = dashboardResponse.data?.summary || {};
-      const membershipData = membershipResponse?.data || {};
-      
-      // Debug: Log membership analytics response
-      console.log('Membership Analytics Response:', membershipResponse);
-      console.log('Membership Data:', membershipData);
-      
-      // Debug: Check localStorage membership purchases
-      const localStoragePurchases = JSON.parse(localStorage.getItem('membershipPurchases') || '[]');
-      console.log('Analytics - Local Storage Purchases:', localStoragePurchases);
       
       // Filter bookings based on payment method filter for analytics calculation
       const filteredBookingsForAnalytics = operatorFilteredBookings.filter(booking => {
@@ -322,39 +184,16 @@ const Analytics = () => {
         return total + amount;
       }, 0);
 
-      // Get membership analytics data from API - try different possible response formats
-      let membershipSales = membershipData.totalMemberships || 
-                           membershipData.membershipCount || 
-                           membershipData.count || 
-                           membershipData.total || 0;
-      
-      let membershipRevenue = membershipData.totalRevenue || 
-                             membershipData.revenue || 
-                             membershipData.totalAmount || 
-                             membershipData.amount || 0;
-
-      // Fallback: Calculate from local storage if API doesn't return data
-      if (membershipSales === 0 && membershipRevenue === 0) {
-        const localMemberships = calculateLocalMembershipAnalytics(
-          currentSite?._id || currentSite?.siteId,
-          startDateTime,
-          endDateTime,
-          currentUser
-        );
-        membershipSales = localMemberships.count;
-        membershipRevenue = localMemberships.revenue;
-        console.log('API returned no membership data, using localStorage fallback:', localMemberships);
-      } else {
-        console.log('Using API membership data:', { membershipSales, membershipRevenue });
-      }
+      // Calculate membership analytics from customers data
+      const membershipAnalytics = calculateMembershipAnalytics();
       
       setAnalytics({
         totalBookings: filteredBookingsForAnalytics.length,
         totalRevenue: calculatedParkingRevenue, // Parking revenue only
         activeBookings: filteredBookingsForAnalytics.filter(b => b.status === 'active').length,
         completedBookings: filteredBookingsForAnalytics.filter(b => b.status === 'completed').length,
-        membershipSales: membershipSales,
-        membershipRevenue: membershipRevenue
+        membershipSales: membershipAnalytics.count,
+        membershipRevenue: membershipAnalytics.revenue
       });
 
     } catch (error) {
