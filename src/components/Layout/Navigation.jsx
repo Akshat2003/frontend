@@ -10,6 +10,7 @@ const Navigation = ({ activeTab, setActiveTab, user }) => {
     { id: 'bookings', label: 'Bookings', icon: Plus },
     { id: 'listings', label: 'Active', icon: Activity },
     { id: 'membership', label: 'Membership', icon: CreditCard },
+    { id: 'members', label: 'Members', icon: Crown },
     // { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
@@ -17,7 +18,6 @@ const Navigation = ({ activeTab, setActiveTab, user }) => {
   const adminNavItems = [
     { id: 'settings', label: 'Settings', icon: Settings },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-    { id: 'members', label: 'Members', icon: Crown },
     { id: 'customers', label: 'Customers', icon: Users },
     { id: 'sites', label: 'Sites', icon: Building },
     { id: 'machines', label: 'Machines', icon: Cog }, 

@@ -23,8 +23,7 @@ function App() {
       case 'membership':
         return <MembershipPurchase />;
       case 'members':
-        // Only render Members for admin users
-        return user?.role === 'admin' ? <Members /> : <OnSpotBookings />;
+        return <Members />;
       case 'customers':
         // Only render CustomerManagement for admin users
         return user?.role === 'admin' ? <CustomerManagement /> : <OnSpotBookings />;

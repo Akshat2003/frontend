@@ -218,136 +218,150 @@ const Members = () => {
         </div>
       )}
 
-      {/* Members Table */}
-      <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Member
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Contact
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Membership
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Vehicles
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {members.length === 0 ? (
-                <tr>
-                  <td colSpan="6" className="px-4 py-8 text-center text-gray-500">
-                    {loading ? (
-                      <div className="flex items-center justify-center">
-                        <LoadingSpinner size="sm" />
-                        <span className="ml-2">Loading members...</span>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center">
-                        <Users className="w-12 h-12 text-gray-300 mb-2" />
-                        <span>No active members found</span>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ) : (
-                members.map((member) => (
-                  <tr key={member._id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center">
-                        <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center mr-3">
-                          <Users className="w-4 h-4 text-purple-600" />
-                        </div>
-                        <div>
-                          <div className="font-medium text-gray-900">
-                            {member.firstName} {member.lastName}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            Member since {formatDate(member.createdAt)}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-col space-y-1">
-                        <div className="flex items-center text-sm text-gray-900">
-                          <Phone className="w-3 h-3 mr-1 text-gray-400" />
-                          {member.phoneNumber}
-                        </div>
-                        {member.email && (
-                          <div className="flex items-center text-sm text-gray-500">
-                            <Mail className="w-3 h-3 mr-1 text-gray-400" />
-                            {member.email}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div>
-                        <div className="font-medium text-gray-900">
-                          {formatMembershipType(member.membership?.type)}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          #{member.membership?.membershipNumber}
-                        </div>
-                        <div className="text-xs text-gray-400">
-                          Expires: {formatDate(member.membership?.expiresAt)}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getMembershipStatusColor(member.membership?.expiresAt)}`}>
-                        Active
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center">
-                        <Car className="w-4 h-4 text-gray-400 mr-1" />
-                        <span className="text-sm text-gray-600">
-                          {member.vehicles?.length || 0} vehicle{member.vehicles?.length !== 1 ? 's' : ''}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="relative">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setShowActionsMenu(showActionsMenu === member._id ? null : member._id)}
-                        >
-                          <MoreVertical className="w-4 h-4" />
-                        </Button>
-                        
-                        {showActionsMenu === member._id && (
-                          <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-10">
-                            <button
-                              onClick={() => handleViewDetails(member)}
-                              className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 w-full text-left"
-                            >
-                              <Eye className="w-4 h-4 mr-2" />
-                              View Details
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+      {/* Members List */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <div className="p-4 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900">
+            Active Members {pagination ? `(${pagination.total})` : ''}
+          </h2>
         </div>
+
+        {loading && members.length === 0 ? (
+          <div className="p-6 md:p-8 flex justify-center">
+            <LoadingSpinner />
+          </div>
+        ) : members.length === 0 ? (
+          <div className="p-6 md:p-8 text-center text-gray-500">
+            <Users className="h-10 w-10 md:h-12 md:w-12 mx-auto mb-4 text-gray-300" />
+            <p>No active members found</p>
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="text-purple-600 hover:text-purple-700 mt-2 text-sm"
+              >
+                Clear search
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            {/* Member Cards */}
+            <div className="divide-y divide-gray-200">
+              {members.map((member) => (
+                <div key={member._id} className="p-3 sm:p-4 hover:bg-gray-50 transition-colors">
+                  {/* Mobile Layout */}
+                  <div className="block sm:hidden">
+                    <div className="flex items-start space-x-3">
+                      <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0">
+                        <Crown className="text-purple-600 w-5 h-5" />
+                      </div>
+                      
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-base font-semibold text-gray-900 truncate">
+                              {member.firstName} {member.lastName}
+                            </h3>
+                            <div className="mt-1 space-y-1">
+                              <div className="flex items-center text-sm text-gray-600">
+                                <Phone className="h-3 w-3 mr-2 flex-shrink-0" />
+                                <span className="truncate">{member.phoneNumber}</span>
+                              </div>
+                              {member.email && (
+                                <div className="flex items-center text-sm text-gray-600">
+                                  <Mail className="h-3 w-3 mr-2 flex-shrink-0" />
+                                  <span className="truncate">{member.email}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          
+                          {/* Mobile Actions */}
+                          <div className="relative ml-2">
+                            <Button
+                              onClick={() => handleViewDetails(member)}
+                              variant="outline"
+                              size="sm"
+                              className="p-1.5"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                        
+                        {/* Mobile Bottom Row */}
+                        <div className="mt-2 flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div className="flex items-center text-xs text-gray-500">
+                              <Car className="h-3 w-3 mr-1" />
+                              <span>{member.vehicles?.length || 0}</span>
+                            </div>
+                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${getMembershipStatusColor(member.membership?.expiresAt)}`}>
+                              {formatMembershipType(member.membership?.type)}
+                            </span>
+                          </div>
+                          
+                          <div className="text-xs text-gray-400">
+                            Expires: {formatDate(member.membership?.expiresAt)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Desktop Layout */}
+                  <div className="hidden sm:block">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-4 flex-1 min-w-0">
+                        <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0">
+                          <Crown className="text-purple-600 w-5 h-5" />
+                        </div>
+                        
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-lg font-medium text-gray-900 truncate">
+                            {member.firstName} {member.lastName}
+                          </h3>
+                          <div className="flex items-center space-x-4 mt-1 text-sm text-gray-600">
+                            <div className="flex items-center">
+                              <Phone className="h-4 w-4 mr-1.5" />
+                              <span>{member.phoneNumber}</span>
+                            </div>
+                            {member.email && (
+                              <div className="flex items-center">
+                                <Mail className="h-4 w-4 mr-1.5" />
+                                <span className="truncate max-w-40">{member.email}</span>
+                              </div>
+                            )}
+                            <div className="flex items-center">
+                              <Car className="h-4 w-4 mr-1.5" />
+                              <span>{member.vehicles?.length || 0} vehicle{member.vehicles?.length !== 1 ? 's' : ''}</span>
+                            </div>
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getMembershipStatusColor(member.membership?.expiresAt)}`}>
+                              {formatMembershipType(member.membership?.type)}
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            Member since {formatDate(member.createdAt)} • Expires: {formatDate(member.membership?.expiresAt)}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center space-x-2 ml-4">
+                        <Button
+                          onClick={() => handleViewDetails(member)}
+                          variant="outline"
+                          size="sm"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
 
         {/* Pagination */}
         {pagination && totalPages > 1 && (
