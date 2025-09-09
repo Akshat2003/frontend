@@ -63,7 +63,48 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
     
     try {
       const response = await apiService.getCustomerById(customerId);
-      setCustomerData(response.data.customer);
+      const customer = response.data.customer;
+      
+      console.log('Customer data fetched:', customer);
+      
+      // If customer has membership, validate it against current booking vehicle type
+      if (customer.membership?.isActive && customer.membership?.membershipNumber && customer.membership?.pin) {
+        console.log('Found active membership, validating for vehicle type:', booking.vehicleType);
+        console.log('Membership details:', customer.membership);
+        
+        try {
+          const validationResponse = await apiService.validateMembership(
+            customer.membership.membershipNumber,
+            customer.membership.pin,
+            booking.vehicleType
+          );
+          
+          console.log('Validation response:', validationResponse);
+          
+          // Update customer data with validated membership info
+          if (validationResponse.success) {
+            customer.membershipValidated = true;
+            customer.membershipDetails = validationResponse.data.customer;
+            console.log('✅ Membership validation successful');
+          } else {
+            customer.membershipValidated = false;
+            console.log('❌ Membership validation failed - success false');
+          }
+        } catch (validationError) {
+          console.log('❌ Membership validation failed:', validationError.message);
+          customer.membershipValidated = false;
+        }
+      } else {
+        console.log('No active membership found or missing credentials');
+        console.log('Membership status:', {
+          exists: !!customer.membership,
+          isActive: customer.membership?.isActive,
+          hasNumber: !!customer.membership?.membershipNumber,
+          hasPin: !!customer.membership?.pin
+        });
+      }
+      
+      setCustomerData(customer);
     } catch (error) {
       console.error('Error fetching customer data:', error);
       setErrors({ customer: 'Failed to load customer data' });
@@ -78,12 +119,22 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
                               customerData?.membership?.expiryDate && 
                               new Date(customerData.membership.expiryDate) > new Date();
   
-  // Check if membership covers current booking vehicle type
+  // Check if membership covers current booking vehicle type (use validation result if available)
   const membershipVehicleTypes = customerData?.membership?.vehicleTypes || [customerData?.membership?.vehicleType || 'two-wheeler'];
-  const vehicleTypeMatches = membershipVehicleTypes.includes(booking?.vehicleType);
+  const vehicleTypeMatches = customerData?.membershipValidated === true ? true : membershipVehicleTypes.includes(booking?.vehicleType);
   
-  // Membership is valid only if active AND covers the vehicle type
-  const canUseMembership = hasActiveMembership && vehicleTypeMatches;
+  // Membership is valid only if active AND covers the vehicle type OR if validation passed
+  const canUseMembership = hasActiveMembership && (customerData?.membershipValidated === true || vehicleTypeMatches);
+  
+  // Debug info
+  console.log('Membership validation status:', {
+    hasActiveMembership,
+    membershipValidated: customerData?.membershipValidated,
+    vehicleTypeMatches,
+    canUseMembership,
+    bookingVehicleType: booking?.vehicleType,
+    membershipVehicleTypes
+  });
 
   const handleClose = () => {
     setCurrentPage('details');
@@ -143,9 +194,12 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
 
       // Call the API to create/extend membership
       const response = await apiService.createMembership(customerId, membershipData);
+      console.log('Membership creation response:', response);
       
-      // Refresh customer data to get the updated membership from the API response
-      await fetchCustomerData();
+      // Wait a moment for database to update, then refresh customer data
+      setTimeout(async () => {
+        await fetchCustomerData();
+      }, 1000);
       
       // Close membership modal
       setShowMembershipModal(false);
