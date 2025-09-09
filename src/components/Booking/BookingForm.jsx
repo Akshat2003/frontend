@@ -168,8 +168,8 @@ const BookingForm = ({ onBookingComplete }) => {
       newErrors.palletNumber = 'Pallet selection is required';
     } else {
       const palletNum = parseInt(bookingData.palletNumber);
-      if (isNaN(palletNum) || palletNum < 1 || palletNum > 8) {
-        newErrors.palletNumber = 'Invalid pallet number. Must be between 1 and 8';
+      if (isNaN(palletNum) || palletNum < 1) {
+        newErrors.palletNumber = 'Invalid pallet number';
       }
     }
 
@@ -196,8 +196,8 @@ const BookingForm = ({ onBookingComplete }) => {
       
       // Validate pallet number range before sending
       const palletNum = parseInt(bookingData.palletNumber);
-      if (palletNum < 1 || palletNum > 8) {
-        throw new Error(`Pallet number ${palletNum} is invalid. Must be between 1 and 8.`);
+      if (palletNum < 1 || palletNum > 999) {
+        throw new Error(`Pallet number ${palletNum} is invalid. Must be between 1 and 999.`);
       }
 
       // Prepare booking data for API
