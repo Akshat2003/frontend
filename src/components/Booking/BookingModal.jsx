@@ -78,11 +78,11 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
                               customerData?.membership?.expiryDate && 
                               new Date(customerData.membership.expiryDate) > new Date();
   
-  // Check if membership vehicle type matches current booking vehicle type
-  const membershipVehicleType = customerData?.membership?.vehicleType || 'two-wheeler'; // Default to two-wheeler for old memberships
-  const vehicleTypeMatches = membershipVehicleType === booking?.vehicleType;
+  // Check if membership covers current booking vehicle type
+  const membershipVehicleTypes = customerData?.membership?.vehicleTypes || [customerData?.membership?.vehicleType || 'two-wheeler'];
+  const vehicleTypeMatches = membershipVehicleTypes.includes(booking?.vehicleType);
   
-  // Membership is valid only if active AND vehicle type matches
+  // Membership is valid only if active AND covers the vehicle type
   const canUseMembership = hasActiveMembership && vehicleTypeMatches;
 
   const handleClose = () => {
@@ -136,27 +136,9 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
       }
 
       const membershipData = {
-        customerId: customerId,
         membershipType: 'monthly',
-        vehicleType: booking.vehicleType,
-        amount: membershipPrice,
-        paymentMethod: membershipPaymentMethod,
-        validFrom: new Date().toISOString(),
-        validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
-        membershipNumber: `MP${Date.now().toString().slice(-8)}`,
-        // Transaction details for analytics tracking
-        transactionType: 'membership_purchase',
-        transactionDate: new Date().toISOString(),
-        siteId: booking.siteId || booking.site?._id,
-        operatorId: booking.operatorId, // If available
-        customerName: booking.customerName,
-        phoneNumber: booking.phoneNumber,
-        // Additional metadata for analytics
-        metadata: {
-          purchaseContext: 'booking_modal',
-          relatedBookingId: booking._id,
-          vehicleNumber: booking.vehicleNumber
-        }
+        validityTerm: 1, // 1 month
+        vehicleTypes: [booking.vehicleType] // Array with current vehicle type
       };
 
       // Call the API to create membership
@@ -228,7 +210,7 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
       if (!hasActiveMembership) {
         setErrors({ membership: 'No active membership found for this customer' });
       } else if (!vehicleTypeMatches) {
-        setErrors({ membership: `Your ${membershipVehicleType} membership cannot be used for ${booking?.vehicleType} parking` });
+        setErrors({ membership: `Your ${membershipVehicleTypes.join(', ')} membership cannot be used for ${booking?.vehicleType} parking` });
       }
       return;
     }
@@ -526,7 +508,7 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
                     <>
                       <p className="text-sm text-orange-600 font-medium">⚠ Vehicle Type Mismatch</p>
                       <p className="text-xs text-orange-600">
-                        {membershipVehicleType} membership cannot be used for {booking?.vehicleType}
+                        {membershipVehicleTypes.join(', ')} membership cannot be used for {booking?.vehicleType}
                       </p>
                     </>
                   )}
@@ -616,7 +598,7 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
           <div className={`space-y-2 text-sm ${vehicleTypeMatches ? 'text-green-800' : 'text-orange-800'}`}>
             <p><strong>Customer:</strong> {customerData?.fullName}</p>
             <p><strong>Membership Number:</strong> {customerData?.membership?.membershipNumber}</p>
-            <p><strong>Membership Type:</strong> {membershipVehicleType} vehicle</p>
+            <p><strong>Membership Types:</strong> {membershipVehicleTypes.join(', ')} vehicle</p>
             <p><strong>Current Booking:</strong> {booking?.vehicleType} vehicle</p>
             <p><strong>Expires:</strong> {new Date(customerData?.membership?.expiryDate).toLocaleDateString()}</p>
             {vehicleTypeMatches ? (

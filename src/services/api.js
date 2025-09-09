@@ -368,10 +368,10 @@ class ApiService {
     });
   }
 
-  async validateMembership(membershipNumber, pin) {
+  async validateMembership(membershipNumber, pin, vehicleType) {
     return this.request('/customers/validate-membership', {
       method: 'POST',
-      body: JSON.stringify({ membershipNumber, pin }),
+      body: JSON.stringify({ membershipNumber, pin, vehicleType }),
     });
   }
 
