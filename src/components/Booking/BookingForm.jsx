@@ -130,15 +130,34 @@ const BookingForm = ({ onBookingComplete }) => {
     if (!currentSite) {
       newErrors.siteId = 'Please select a parking site from the header dropdown';
     }
+    
+    // Validate phone number (10 digits)
     if (!customerData.phoneNumber.trim()) {
       newErrors.phoneNumber = 'Phone number is required';
+    } else {
+      const cleanPhone = customerData.phoneNumber.replace(/\s|-/g, '');
+      if (!/^\d{10}$/.test(cleanPhone)) {
+        newErrors.phoneNumber = 'Phone number must be 10 digits';
+      }
     }
+    
+    // Validate customer name (letters and spaces only)
     if (!customerData.customerName.trim()) {
       newErrors.customerName = 'Customer name is required';
+    } else if (!/^[a-zA-Z\s]+$/.test(customerData.customerName.trim())) {
+      newErrors.customerName = 'Customer name can only contain letters and spaces';
     }
+    
+    // Validate vehicle number format (Indian vehicle number format)
     if (!customerData.vehicleNumber.trim()) {
       newErrors.vehicleNumber = 'Vehicle number is required';
+    } else {
+      const vehicleNum = customerData.vehicleNumber.trim().toUpperCase();
+      if (!/^[A-Z]{2}[0-9]{1,2}[A-Z]{1,2}[0-9]{4}$/.test(vehicleNum)) {
+        newErrors.vehicleNumber = 'Invalid vehicle number format (e.g., MH01AB1234)';
+      }
     }
+    
     if (!bookingData.vehicleType) {
       newErrors.vehicleType = 'Vehicle type is required';
     }
@@ -147,6 +166,11 @@ const BookingForm = ({ onBookingComplete }) => {
     }
     if (!bookingData.palletNumber) {
       newErrors.palletNumber = 'Pallet selection is required';
+    } else {
+      const palletNum = parseInt(bookingData.palletNumber);
+      if (isNaN(palletNum) || palletNum < 1 || palletNum > 8) {
+        newErrors.palletNumber = 'Invalid pallet number. Must be between 1 and 8';
+      }
     }
 
     setErrors(newErrors);
@@ -170,21 +194,32 @@ const BookingForm = ({ onBookingComplete }) => {
       // Find selected pallet to get custom name
       const selectedPallet = selectedMachinePallets.find(pallet => pallet.number === parseInt(bookingData.palletNumber));
       
+      // Validate pallet number range before sending
+      const palletNum = parseInt(bookingData.palletNumber);
+      if (palletNum < 1 || palletNum > 8) {
+        throw new Error(`Pallet number ${palletNum} is invalid. Must be between 1 and 8.`);
+      }
+
       // Prepare booking data for API
       const bookingPayload = {
-        customerName: customerData.customerName,
-        phoneNumber: customerData.phoneNumber,
-        vehicleNumber: customerData.vehicleNumber,
+        customerName: customerData.customerName.trim(),
+        phoneNumber: customerData.phoneNumber.replace(/\s|-/g, ''), // Clean phone number
+        vehicleNumber: customerData.vehicleNumber.trim().toUpperCase(), // Ensure uppercase
         vehicleType: bookingData.vehicleType,
         machineNumber: selectedMachine.machineNumber, // Use actual machine number from selected machine
-        palletNumber: parseInt(bookingData.palletNumber),
+        palletNumber: palletNum, // Use validated integer
         siteId: currentSite?._id || currentSite?.siteId // Include selected site ID
         // Omit optional fields that are empty to avoid validation errors
       };
+      
+      console.log('Booking payload:', bookingPayload); // Debug log
+      console.log('Selected machine:', selectedMachine); // Debug log
+      console.log('Selected pallet:', selectedPallet); // Debug log
 
       // Add pallet custom name for puzzle parking machines
       if (selectedMachine.parkingType === 'puzzle' && selectedPallet?.customName) {
         bookingPayload.palletName = selectedPallet.customName;
+        console.log('Added palletName:', selectedPallet.customName); // Debug log
       }
 
 
@@ -231,8 +266,18 @@ const BookingForm = ({ onBookingComplete }) => {
     } catch (error) {
       console.error('Error creating booking:', error);
       
-      // Set form-level error
-      setErrors({ submit: error.message || 'Failed to create booking. Please try again.' });
+      // Handle different types of errors
+      if (error.statusCode === 422 && error.validationErrors && error.validationErrors.length > 0) {
+        // Handle validation errors from backend
+        const validationErrors = {};
+        error.validationErrors.forEach(err => {
+          validationErrors[err.field] = err.message;
+        });
+        setErrors(validationErrors);
+      } else {
+        // Set form-level error
+        setErrors({ submit: error.message || 'Failed to create booking. Please try again.' });
+      }
     } finally {
       setIsSubmitting(false);
     }
