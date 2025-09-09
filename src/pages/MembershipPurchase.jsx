@@ -9,9 +9,8 @@ import apiService from '../services/api';
 const MembershipPurchase = () => {
   const [currentPage, setCurrentPage] = useState('customer-details');
   const [customerData, setCustomerData] = useState({
-    firstName: '',
     phoneNumber: '',
-    email: '',
+    firstName: '',
     vehicleNumber: '',
     vehicleType: 'two-wheeler'
   });
@@ -56,13 +55,6 @@ const MembershipPurchase = () => {
       newErrors.vehicleNumber = 'Vehicle number is required';
     }
     
-    // Validate email if provided
-    if (customerData.email && customerData.email.trim()) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(customerData.email.trim())) {
-        newErrors.email = 'Please enter a valid email address';
-      }
-    }
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -151,13 +143,13 @@ const MembershipPurchase = () => {
           firstName: firstName.trim(),
           lastName: lastName.trim(),
           phoneNumber: cleanPhoneNumber,
-          email: customerData.email ? customerData.email.trim() : null,
           vehicles: [{
             vehicleNumber: customerData.vehicleNumber.toUpperCase().trim(),
             vehicleType: customerData.vehicleType,
             isActive: true
           }]
         };
+        
         
         const customerResponse = await apiService.createCustomer(newCustomerData);
         customerId = customerResponse.data.customer._id;
@@ -261,6 +253,16 @@ const MembershipPurchase = () => {
         {/* Customer Details */}
         <div className="space-y-4">
           <Input
+            label="Phone Number"
+            type="tel"
+            value={customerData.phoneNumber}
+            onChange={(e) => handleInputChange('phoneNumber', e.target.value)}
+            error={errors.phoneNumber}
+            placeholder="Enter 10-digit phone number"
+            required
+          />
+          
+          <Input
             label="Customer Name"
             value={customerData.firstName}
             onChange={(e) => handleInputChange('firstName', e.target.value)}
@@ -268,26 +270,6 @@ const MembershipPurchase = () => {
             placeholder="Enter customer name"
             required
           />
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input
-              label="Phone Number"
-              type="tel"
-              value={customerData.phoneNumber}
-              onChange={(e) => handleInputChange('phoneNumber', e.target.value)}
-              error={errors.phoneNumber}
-              placeholder="Enter 10-digit phone number"
-              required
-            />
-            
-            <Input
-              label="Email"
-              type="email"
-              value={customerData.email}
-              onChange={(e) => handleInputChange('email', e.target.value)}
-              placeholder="Enter email address"
-            />
-          </div>
         </div>
 
         {/* Vehicle Details */}
@@ -533,9 +515,8 @@ const MembershipPurchase = () => {
     const handleCreateAnother = () => {
       setCurrentPage('customer-details');
       setCustomerData({
-        firstName: '',
         phoneNumber: '',
-        email: '',
+        firstName: '',
         vehicleNumber: '',
         vehicleType: 'two-wheeler'
       });
