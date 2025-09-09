@@ -8,7 +8,7 @@
  * 4. Remove user from site
  */
 
-const API_BASE_URL = 'https://operator-backend-f5ie.onrender.com/api';
+const API_BASE_URL = 'https://backend-yrbl.onrender.com/api';
 
 // Test credentials - you'll need to replace these with actual values
 const ADMIN_CREDENTIALS = {
