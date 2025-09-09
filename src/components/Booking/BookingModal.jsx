@@ -152,7 +152,7 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
       setMembershipPaymentMethod('');
       
       // Show success message  
-      alert(`Monthly pass ${hasAnyActiveMembership ? 'extended' : 'purchased'} successfully for ${formatCurrency(membershipPrice)}! Customer can now use membership payment for ${booking.vehicleType} parking.`);
+      alert(`Monthly pass ${hasActiveMembership ? 'extended' : 'purchased'} successfully for ${formatCurrency(membershipPrice)}! Customer can now use membership payment for ${booking.vehicleType} parking.`);
       
     } catch (error) {
       console.error('Error purchasing membership:', error);
