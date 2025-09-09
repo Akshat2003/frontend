@@ -72,11 +72,17 @@ const MembershipPurchase = () => {
       const searchResponse = await apiService.searchCustomers(customerData.phoneNumber, 'phone');
       if (searchResponse.data.customers && searchResponse.data.customers.length > 0) {
         const existingCustomer = searchResponse.data.customers[0];
-        if (existingCustomer.hasMembership || (existingCustomer.membership && existingCustomer.membership.isActive)) {
-          setErrors({ 
-            phoneNumber: `Customer ${existingCustomer.fullName} already has an active membership (${existingCustomer.membership.membershipNumber}). Please use a different phone number.`
-          });
-          return;
+        // Check if customer has an active membership that covers the current vehicle type
+        if (existingCustomer.hasMembership && existingCustomer.membership && existingCustomer.membership.isActive) {
+          const coveredVehicleTypes = existingCustomer.membership.vehicleTypes || [];
+          if (coveredVehicleTypes.includes(customerData.vehicleType)) {
+            setErrors({ 
+              phoneNumber: `Customer ${existingCustomer.fullName} already has an active membership for ${customerData.vehicleType} (${existingCustomer.membership.membershipNumber}). Please use a different phone number.`
+            });
+            return;
+          }
+          // If they have membership for a different vehicle type, allow them to proceed
+          console.log(`Customer has membership for ${coveredVehicleTypes.join(', ')} but purchasing for ${customerData.vehicleType}`);
         }
       }
     } catch (error) {
@@ -113,9 +119,14 @@ const MembershipPurchase = () => {
           customerId = existingCustomer._id;
           setCreatedCustomer(existingCustomer);
           
-          // Check if customer already has an active membership
-          if (existingCustomer.hasMembership || (existingCustomer.membership && existingCustomer.membership.isActive)) {
-            throw new Error(`Customer ${existingCustomer.fullName} already has an active membership. Membership Number: ${existingCustomer.membership.membershipNumber}`);
+          // Check if customer already has an active membership for this vehicle type
+          if (existingCustomer.hasMembership && existingCustomer.membership && existingCustomer.membership.isActive) {
+            const coveredVehicleTypes = existingCustomer.membership.vehicleTypes || [];
+            if (coveredVehicleTypes.includes(customerData.vehicleType)) {
+              throw new Error(`Customer ${existingCustomer.fullName} already has an active membership for ${customerData.vehicleType}. Membership Number: ${existingCustomer.membership.membershipNumber}`);
+            }
+            // If they have membership for a different vehicle type, we'll update it to include both types
+            console.log(`Customer has membership for ${coveredVehicleTypes.join(', ')} but purchasing for ${customerData.vehicleType}`);
           }
         }
       } catch (searchError) {
@@ -156,11 +167,19 @@ const MembershipPurchase = () => {
         setCreatedCustomer(customerResponse.data.customer);
       }
       
-      // Step 3: Create membership for the customer with payment details
+      // Step 3: Create or update membership for the customer with payment details
+      // If customer has existing membership, we're adding a new vehicle type
+      let vehicleTypesToAdd = [customerData.vehicleType];
+      if (existingCustomer && existingCustomer.membership && existingCustomer.membership.vehicleTypes) {
+        // Include existing vehicle types plus the new one
+        const existingTypes = existingCustomer.membership.vehicleTypes || [];
+        vehicleTypesToAdd = [...new Set([...existingTypes, customerData.vehicleType])];
+      }
+      
       const membershipData = {
         membershipType: 'monthly',
         validityTerm: 1, // 1 month
-        vehicleTypes: [customerData.vehicleType], // Array with current vehicle type
+        vehicleTypes: vehicleTypesToAdd, // Array with all vehicle types
         paymentDetails: {
           amount: membershipPrice,
           method: paymentMethod,
