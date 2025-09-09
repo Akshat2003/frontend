@@ -141,60 +141,18 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
         vehicleTypes: [booking.vehicleType] // Array with current vehicle type
       };
 
-      // Call the API to create membership
-      await apiService.createMembership(customerId, membershipData);
+      // Call the API to create/extend membership
+      const response = await apiService.createMembership(customerId, membershipData);
       
-      // Get current user for operator tracking
-      const getCurrentUser = () => {
-        try {
-          const userData = localStorage.getItem('parkingOperator');
-          return userData ? JSON.parse(userData) : null;
-        } catch (error) {
-          return null;
-        }
-      };
-
-      const currentUser = getCurrentUser();
-
-      // Track membership purchase locally for analytics
-      const membershipPurchase = {
-        id: `mp_${Date.now()}`,
-        customerId: customerId,
-        customerName: booking.customerName,
-        vehicleType: booking.vehicleType,
-        amount: membershipPrice,
-        paymentMethod: membershipPaymentMethod,
-        purchaseDate: new Date().toISOString(),
-        siteId: booking.siteId || booking.site?._id || 'unknown',
-        membershipNumber: membershipData.membershipNumber,
-        operatorId: currentUser?.operatorId || 'unknown', // Add operator tracking
-        isActive: true // Mark as active by default
-      };
-
-      // Store in localStorage for analytics tracking
-      const existingPurchases = JSON.parse(localStorage.getItem('membershipPurchases') || '[]');
-      existingPurchases.push(membershipPurchase);
-      localStorage.setItem('membershipPurchases', JSON.stringify(existingPurchases));
-      
-      // Refresh customer data to get the new membership
+      // Refresh customer data to get the updated membership from the API response
       await fetchCustomerData();
       
       // Close membership modal
       setShowMembershipModal(false);
       setMembershipPaymentMethod('');
       
-      // Trigger a custom event to refresh analytics (if on analytics page)
-      window.dispatchEvent(new CustomEvent('membershipPurchased', {
-        detail: { 
-          membershipData,
-          amount: membershipPrice,
-          vehicleType: booking.vehicleType,
-          purchase: membershipPurchase
-        }
-      }));
-      
-      // Show success message
-      alert(`Monthly pass purchased successfully for ${formatCurrency(membershipPrice)}! Customer can now use membership payment for free parking.`);
+      // Show success message  
+      alert(`Monthly pass ${hasAnyActiveMembership ? 'extended' : 'purchased'} successfully for ${formatCurrency(membershipPrice)}! Customer can now use membership payment for ${booking.vehicleType} parking.`);
       
     } catch (error) {
       console.error('Error purchasing membership:', error);
