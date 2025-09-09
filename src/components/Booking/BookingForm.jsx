@@ -61,8 +61,13 @@ const BookingForm = ({ onBookingComplete }) => {
         ? pallet.customName 
         : `Pallet ${pallet.number}`;
       
+      // For value, use customName if available for puzzle parking, otherwise use number
+      const palletValue = selectedMachine?.parkingType === 'puzzle' && pallet.customName
+        ? pallet.customName
+        : pallet.number.toString();
+      
       return {
-        value: pallet.number.toString(),
+        value: palletValue,
         label: `${palletName} (${pallet.vehicleCapacity - pallet.currentOccupancy} spaces available)`,
         palletData: pallet
       };
@@ -166,11 +171,10 @@ const BookingForm = ({ onBookingComplete }) => {
     }
     if (!bookingData.palletNumber) {
       newErrors.palletNumber = 'Pallet selection is required';
-    } else {
-      const palletNum = parseInt(bookingData.palletNumber);
-      if (isNaN(palletNum) || palletNum < 1) {
-        newErrors.palletNumber = 'Invalid pallet number';
-      }
+    } else if (bookingData.palletNumber.trim().length === 0) {
+      newErrors.palletNumber = 'Pallet number/name cannot be empty';
+    } else if (bookingData.palletNumber.length > 50) {
+      newErrors.palletNumber = 'Pallet number/name must not exceed 50 characters';
     }
 
     setErrors(newErrors);
@@ -191,13 +195,21 @@ const BookingForm = ({ onBookingComplete }) => {
         throw new Error('Selected machine not found');
       }
 
-      // Find selected pallet to get custom name
-      const selectedPallet = selectedMachinePallets.find(pallet => pallet.number === parseInt(bookingData.palletNumber));
+      // Find selected pallet - handle both numeric and text-based pallet identifiers
+      const selectedPallet = selectedMachinePallets.find(pallet => {
+        // Try matching by number (for numeric pallets)
+        if (!isNaN(bookingData.palletNumber)) {
+          return pallet.number === parseInt(bookingData.palletNumber);
+        }
+        // For text-based pallets, match by customName or convert number to string
+        return pallet.customName === bookingData.palletNumber || 
+               pallet.number.toString() === bookingData.palletNumber;
+      });
       
-      // Validate pallet number range before sending
-      const palletNum = parseInt(bookingData.palletNumber);
-      if (palletNum < 1 || palletNum > 999) {
-        throw new Error(`Pallet number ${palletNum} is invalid. Must be between 1 and 999.`);
+      // Basic validation for pallet identifier
+      const palletIdentifier = bookingData.palletNumber.trim();
+      if (!palletIdentifier) {
+        throw new Error('Pallet number/name is required');
       }
 
       // Prepare booking data for API
@@ -207,7 +219,7 @@ const BookingForm = ({ onBookingComplete }) => {
         vehicleNumber: customerData.vehicleNumber.trim().toUpperCase(), // Ensure uppercase
         vehicleType: bookingData.vehicleType,
         machineNumber: selectedMachine.machineNumber, // Use actual machine number from selected machine
-        palletNumber: palletNum, // Use validated integer
+        palletNumber: palletIdentifier, // Use text-based pallet identifier
         siteId: currentSite?._id || currentSite?.siteId // Include selected site ID
         // Omit optional fields that are empty to avoid validation errors
       };
@@ -215,9 +227,11 @@ const BookingForm = ({ onBookingComplete }) => {
       console.log('Booking payload:', bookingPayload); // Debug log
       console.log('Selected machine:', selectedMachine); // Debug log
       console.log('Selected pallet:', selectedPallet); // Debug log
+      console.log('Selected pallet customName:', selectedPallet?.customName); // Debug log
+      console.log('Machine parking type:', selectedMachine.parkingType); // Debug log
 
-      // Add pallet custom name for puzzle parking machines
-      if (selectedMachine.parkingType === 'puzzle' && selectedPallet?.customName) {
+      // Add pallet custom name for puzzle parking machines (only if different from pallet number)
+      if (selectedMachine.parkingType === 'puzzle' && selectedPallet?.customName && selectedPallet.customName !== selectedPallet.number.toString()) {
         bookingPayload.palletName = selectedPallet.customName;
         console.log('Added palletName:', selectedPallet.customName); // Debug log
       }
@@ -231,7 +245,7 @@ const BookingForm = ({ onBookingComplete }) => {
         customerName: customerData.customerName,
         vehicleNumber: customerData.vehicleNumber,
         machineNumber: selectedMachine.machineNumber,
-        palletNumber: parseInt(bookingData.palletNumber),
+        palletNumber: palletIdentifier, // Use text-based pallet identifier
         palletName: selectedMachine.parkingType === 'puzzle' && selectedPallet?.customName 
           ? selectedPallet.customName 
           : null,
