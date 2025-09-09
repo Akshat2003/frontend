@@ -32,18 +32,36 @@ const MembershipPurchase = () => {
   const validateForm = () => {
     const newErrors = {};
     
+    // Validate firstName (must be 2+ characters, letters/spaces only)
     if (!customerData.firstName.trim()) {
       newErrors.firstName = 'First name is required';
+    } else if (customerData.firstName.trim().length < 2) {
+      newErrors.firstName = 'First name must be at least 2 characters';
+    } else if (!/^[a-zA-Z\s]+$/.test(customerData.firstName.trim())) {
+      newErrors.firstName = 'First name can only contain letters and spaces';
     }
     
+    // Validate phone number
     if (!customerData.phoneNumber.trim()) {
       newErrors.phoneNumber = 'Phone number is required';
-    } else if (!/^\d{10}$/.test(customerData.phoneNumber.replace(/\s|-/g, ''))) {
-      newErrors.phoneNumber = 'Please enter a valid 10-digit phone number';
+    } else {
+      const cleanPhone = customerData.phoneNumber.replace(/\s|-/g, '');
+      if (!/^\d{10}$/.test(cleanPhone)) {
+        newErrors.phoneNumber = 'Please enter a valid 10-digit phone number';
+      }
     }
     
+    // Validate vehicle number
     if (!customerData.vehicleNumber.trim()) {
       newErrors.vehicleNumber = 'Vehicle number is required';
+    }
+    
+    // Validate email if provided
+    if (customerData.email && customerData.email.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(customerData.email.trim())) {
+        newErrors.email = 'Please enter a valid email address';
+      }
     }
     
     setErrors(newErrors);
@@ -119,15 +137,23 @@ const MembershipPurchase = () => {
       if (!customerId) {
         const nameParts = customerData.firstName.trim().split(' ');
         const firstName = nameParts[0];
-        const lastName = nameParts.slice(1).join(' ') || firstName;
+        let lastName = nameParts.slice(1).join(' ');
+        
+        // Ensure lastName meets validation requirements (min 2 chars, letters/spaces only)
+        if (!lastName || lastName.length < 2) {
+          lastName = firstName; // Use firstName as lastName if no valid lastName
+        }
+        
+        // Clean phone number to ensure it's valid
+        const cleanPhoneNumber = customerData.phoneNumber.replace(/\s|-/g, '');
         
         const newCustomerData = {
-          firstName,
-          lastName,
-          phoneNumber: customerData.phoneNumber,
-          email: customerData.email || null,
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          phoneNumber: cleanPhoneNumber,
+          email: customerData.email ? customerData.email.trim() : null,
           vehicles: [{
-            vehicleNumber: customerData.vehicleNumber.toUpperCase(),
+            vehicleNumber: customerData.vehicleNumber.toUpperCase().trim(),
             vehicleType: customerData.vehicleType,
             isActive: true
           }]
@@ -177,14 +203,24 @@ const MembershipPurchase = () => {
       // Set specific error messages based on the error
       if (error.message && error.message.includes('already has an active membership')) {
         setErrors({ payment: error.message });
+      } else if (error.statusCode === 422) {
+        // Handle validation errors
+        if (error.validationErrors && error.validationErrors.length > 0) {
+          const validationErrors = {};
+          error.validationErrors.forEach(err => {
+            // Map backend field names to frontend field names if needed
+            let fieldName = err.field;
+            if (err.field === 'firstName' || err.field === 'lastName') {
+              fieldName = 'firstName'; // Show error on firstName field
+            }
+            validationErrors[fieldName] = err.message;
+          });
+          setErrors(validationErrors);
+        } else {
+          setErrors({ payment: error.message || 'Validation error occurred' });
+        }
       } else if (error.statusCode === 400) {
         setErrors({ payment: error.message });
-      } else if (error.statusCode === 422 && error.validationErrors) {
-        const validationErrors = {};
-        error.validationErrors.forEach(err => {
-          validationErrors[err.field] = err.message;
-        });
-        setErrors(validationErrors);
       } else {
         setErrors({ payment: 'Failed to create membership. Please try again.' });
       }
