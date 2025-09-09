@@ -5,7 +5,7 @@ import Button from '../components/Common/Button';
 import Input from '../components/Common/Input';
 import Select from '../components/Common/Select';
 import Modal from '../components/Common/Modal';
-import { api } from '../services/api';
+import api from '../services/api';
 
 const Members = () => {
   const [members, setMembers] = useState([]);
