@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Activity, BarChart3, Settings, Users, Building, Cog, MoreHorizontal, CreditCard } from 'lucide-react';
+import { Plus, Activity, BarChart3, Settings, Users, Building, Cog, MoreHorizontal, CreditCard, Crown } from 'lucide-react';
 
 const Navigation = ({ activeTab, setActiveTab, user }) => {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -17,6 +17,7 @@ const Navigation = ({ activeTab, setActiveTab, user }) => {
   const adminNavItems = [
     { id: 'settings', label: 'Settings', icon: Settings },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+    { id: 'members', label: 'Members', icon: Crown },
     { id: 'customers', label: 'Customers', icon: Users },
     { id: 'sites', label: 'Sites', icon: Building },
     { id: 'machines', label: 'Machines', icon: Cog }, 

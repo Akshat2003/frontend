@@ -381,6 +381,21 @@ class ApiService {
     });
   }
 
+  async getActiveMembers(filters = {}) {
+    const queryParams = new URLSearchParams();
+    
+    if (filters.page) queryParams.append('page', filters.page);
+    if (filters.limit) queryParams.append('limit', filters.limit);
+    if (filters.search) queryParams.append('search', filters.search);
+    if (filters.membershipType) queryParams.append('membershipType', filters.membershipType);
+    if (filters.sortBy) queryParams.append('sortBy', filters.sortBy);
+    if (filters.sortOrder) queryParams.append('sortOrder', filters.sortOrder);
+
+    const queryString = queryParams.toString();
+    const endpoint = queryString ? `/customers/active-members?${queryString}` : '/customers/active-members';
+    return this.request(endpoint);
+  }
+
   // Site endpoints
   async getSites(filters = {}) {
     const queryParams = new URLSearchParams();

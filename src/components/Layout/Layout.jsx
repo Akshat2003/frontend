@@ -11,6 +11,8 @@ const Layout = ({ children, activeTab, setActiveTab, user, onLogout }) => {
         return 'Active Listings';
       case 'membership':
         return 'Membership Management';
+      case 'members':
+        return 'Active Members';
       case 'customers':
         return 'Customer Management';
       case 'sites':

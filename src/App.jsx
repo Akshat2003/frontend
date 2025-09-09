@@ -8,6 +8,7 @@ import MachineManagement from './pages/MachineManagement';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
 import MembershipPurchase from './pages/MembershipPurchase';
+import Members from './pages/Members';
 import AuthWrapper from './pages/auth/AuthWrapper';
 
 function App() {
@@ -21,6 +22,9 @@ function App() {
         return <ActiveListings />;
       case 'membership':
         return <MembershipPurchase />;
+      case 'members':
+        // Only render Members for admin users
+        return user?.role === 'admin' ? <Members /> : <OnSpotBookings />;
       case 'customers':
         // Only render CustomerManagement for admin users
         return user?.role === 'admin' ? <CustomerManagement /> : <OnSpotBookings />;
