@@ -22,8 +22,8 @@ const Members = () => {
         customer.hasMembership && 
         customer.membership && 
         customer.membership.isActive &&
-        customer.membership.expiresAt &&
-        new Date(customer.membership.expiresAt) > new Date()
+        customer.membership.expiryDate &&
+        new Date(customer.membership.expiryDate) > new Date()
       );
       setActiveMembers(membersWithActiveMembership);
     }
@@ -39,10 +39,10 @@ const Members = () => {
 
   const formatMembershipType = (type) => {
     const types = {
-      'daily': 'Daily Pass',
-      'weekly': 'Weekly Pass', 
-      'monthly': 'Monthly Pass',
-      'yearly': 'Yearly Pass'
+      'monthly': 'Monthly',
+      'quarterly': 'Quarterly', 
+      'yearly': 'Yearly',
+      'premium': 'Premium'
     };
     return types[type] || type;
   };
@@ -123,7 +123,7 @@ const Members = () => {
                         </div>
                         
                         <div className="text-xs text-gray-400">
-                          Expires: {formatDate(member.membership?.expiresAt)}
+                          Expires: {formatDate(member.membership?.expiryDate)}
                         </div>
                       </div>
                     </div>
@@ -162,7 +162,7 @@ const Members = () => {
                           </span>
                         </div>
                         <div className="text-xs text-gray-500 mt-1">
-                          Member since {formatDate(member.createdAt)} • Expires: {formatDate(member.membership?.expiresAt)}
+                          Member since {formatDate(member.createdAt)} • Expires: {formatDate(member.membership?.expiryDate)}
                         </div>
                       </div>
                     </div>
