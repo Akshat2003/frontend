@@ -50,11 +50,28 @@ const MembershipPurchase = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleProceedToPayment = (e) => {
+  const handleProceedToPayment = async (e) => {
     e.preventDefault();
     
     if (!validateForm()) {
       return;
+    }
+    
+    // Optional: Check for existing membership before proceeding to payment
+    try {
+      const searchResponse = await apiService.searchCustomers(customerData.phoneNumber, 'phone');
+      if (searchResponse.data.customers && searchResponse.data.customers.length > 0) {
+        const existingCustomer = searchResponse.data.customers[0];
+        if (existingCustomer.hasMembership || (existingCustomer.membership && existingCustomer.membership.isActive)) {
+          setErrors({ 
+            phoneNumber: `Customer ${existingCustomer.fullName} already has an active membership (${existingCustomer.membership.membershipNumber}). Please use a different phone number.`
+          });
+          return;
+        }
+      }
+    } catch (error) {
+      // If search fails, continue to payment page - we'll handle it there
+      console.log('Customer search failed, continuing to payment');
     }
     
     setCurrentPage('payment');
@@ -77,14 +94,24 @@ const MembershipPurchase = () => {
     try {
       // Step 1: Search for existing customer by phone number
       let customerId = null;
+      let existingCustomer = null;
       
       try {
         const searchResponse = await apiService.searchCustomers(customerData.phoneNumber, 'phone');
         if (searchResponse.data.customers && searchResponse.data.customers.length > 0) {
-          customerId = searchResponse.data.customers[0]._id;
-          setCreatedCustomer(searchResponse.data.customers[0]);
+          existingCustomer = searchResponse.data.customers[0];
+          customerId = existingCustomer._id;
+          setCreatedCustomer(existingCustomer);
+          
+          // Check if customer already has an active membership
+          if (existingCustomer.hasMembership || (existingCustomer.membership && existingCustomer.membership.isActive)) {
+            throw new Error(`Customer ${existingCustomer.fullName} already has an active membership. Membership Number: ${existingCustomer.membership.membershipNumber}`);
+          }
         }
       } catch (searchError) {
+        if (searchError.message && searchError.message.includes('already has an active membership')) {
+          throw searchError; // Re-throw membership error
+        }
         console.log('Customer not found, will create new one');
       }
       
@@ -148,7 +175,9 @@ const MembershipPurchase = () => {
       setPaymentStatus('failed');
       
       // Set specific error messages based on the error
-      if (error.statusCode === 400) {
+      if (error.message && error.message.includes('already has an active membership')) {
+        setErrors({ payment: error.message });
+      } else if (error.statusCode === 400) {
         setErrors({ payment: error.message });
       } else if (error.statusCode === 422 && error.validationErrors) {
         const validationErrors = {};
