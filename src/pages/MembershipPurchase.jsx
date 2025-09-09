@@ -75,59 +75,37 @@ const MembershipPurchase = () => {
     setErrors({});
     
     try {
-      // Step 1: Search for existing customer by phone number
-      let customerId = null;
+      // Use the new public API endpoint for membership purchase
+      const nameParts = customerData.firstName.trim().split(' ');
+      const firstName = nameParts[0];
+      const lastName = nameParts.slice(1).join(' ') || '';
       
-      try {
-        const searchResponse = await apiService.searchCustomers(customerData.phoneNumber, 'phone');
-        if (searchResponse.data.customers && searchResponse.data.customers.length > 0) {
-          customerId = searchResponse.data.customers[0]._id;
-          setCreatedCustomer(searchResponse.data.customers[0]);
-        }
-      } catch (searchError) {
-        console.log('Customer not found, will create new one');
-      }
-      
-      // Step 2: Create new customer if not found
-      if (!customerId) {
-        const nameParts = customerData.firstName.trim().split(' ');
-        const firstName = nameParts[0];
-        const lastName = nameParts.slice(1).join(' ') || firstName;
-        
-        const newCustomerData = {
-          firstName,
-          lastName,
-          phoneNumber: customerData.phoneNumber,
-          email: customerData.email || null,
-          vehicles: [{
-            vehicleNumber: customerData.vehicleNumber.toUpperCase(),
-            vehicleType: customerData.vehicleType,
-            isActive: true
-          }]
-        };
-        
-        const customerResponse = await apiService.createCustomer(newCustomerData);
-        customerId = customerResponse.data.customer._id;
-        setCreatedCustomer(customerResponse.data.customer);
-      }
-      
-      // Step 3: Create membership for the customer
       const membershipData = {
+        firstName,
+        lastName,
+        phoneNumber: customerData.phoneNumber,
+        email: customerData.email || null,
+        vehicleNumber: customerData.vehicleNumber.toUpperCase(),
+        vehicleType: customerData.vehicleType,
         membershipType: 'monthly',
         validityTerm: 1, // 1 month
-        vehicleTypes: [customerData.vehicleType] // Array with current vehicle type
+        make: '',
+        model: '',
+        color: ''
       };
       
-      const membershipResponse = await apiService.createMembership(customerId, membershipData);
-      setCreatedMembership(membershipResponse.data.customer.membership);
+      const response = await apiService.purchaseMembershipPublic(membershipData);
       
-      // Step 4: Update analytics (local fallback)
+      setCreatedCustomer(response.data.customer);
+      setCreatedMembership(response.data.membership);
+      
+      // Update analytics (local fallback)
       const existingAnalytics = JSON.parse(localStorage.getItem('membershipAnalytics') || '{"count": 0, "revenue": 0}');
       existingAnalytics.count += 1;
       existingAnalytics.revenue += membershipPrice;
       localStorage.setItem('membershipAnalytics', JSON.stringify(existingAnalytics));
       
-      // Step 5: Trigger analytics update event
+      // Trigger analytics update event
       window.dispatchEvent(new CustomEvent('membershipPurchased', { 
         detail: {
           customerName: customerData.firstName,
@@ -136,7 +114,7 @@ const MembershipPurchase = () => {
           vehicleType: customerData.vehicleType,
           amount: membershipPrice,
           paymentMethod: paymentMethod,
-          membership: membershipResponse.data.customer.membership
+          membership: response.data.membership
         }
       }));
       

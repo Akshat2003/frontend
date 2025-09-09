@@ -381,6 +381,40 @@ class ApiService {
     });
   }
 
+  // Public membership endpoints (no auth required)
+  async purchaseMembershipPublic(membershipData) {
+    return this.request('/public/membership/purchase', {
+      method: 'POST',
+      body: JSON.stringify(membershipData),
+      headers: {
+        'Content-Type': 'application/json',
+        // No authorization header for public endpoints
+      }
+    });
+  }
+
+  async searchCustomersPublic(phoneNumber) {
+    return this.request('/public/customers/search', {
+      method: 'POST',
+      body: JSON.stringify({ phoneNumber }),
+      headers: {
+        'Content-Type': 'application/json',
+        // No authorization header for public endpoints  
+      }
+    });
+  }
+
+  async validateMembershipPublic(membershipNumber, pin, vehicleType) {
+    return this.request('/public/membership/validate', {
+      method: 'POST',
+      body: JSON.stringify({ membershipNumber, pin, vehicleType }),
+      headers: {
+        'Content-Type': 'application/json',
+        // No authorization header for public endpoints
+      }
+    });
+  }
+
   // Site endpoints
   async getSites(filters = {}) {
     const queryParams = new URLSearchParams();
