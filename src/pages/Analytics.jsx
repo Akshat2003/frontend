@@ -75,34 +75,55 @@ const Analytics = () => {
     });
   }, []);
 
-  const calculateMembershipAnalytics = () => {
-    if (!customers || customers.length === 0) {
-      return { count: 0, revenue: 0 };
+  const calculateMembershipAnalytics = async () => {
+    // Get active membership count from customers
+    let count = 0;
+    if (customers && customers.length > 0) {
+      const activeMembers = customers.filter(customer => 
+        customer.hasMembership && 
+        customer.membership && 
+        customer.membership.isActive &&
+        customer.membership.expiryDate &&
+        new Date(customer.membership.expiryDate) > new Date()
+      );
+      count = activeMembers.length;
     }
 
-    // Filter customers with active memberships
-    const activeMembers = customers.filter(customer => 
-      customer.hasMembership && 
-      customer.membership && 
-      customer.membership.isActive &&
-      customer.membership.expiryDate &&
-      new Date(customer.membership.expiryDate) > new Date()
-    );
+    // Get actual revenue from MembershipPayment collection
+    let revenue = 0;
+    try {
+      const startDateTime = new Date(dateRange.startDate + 'T00:00:00').toISOString();
+      const endDateTime = new Date(dateRange.endDate + 'T23:59:59').toISOString();
+      
+      const revenueResponse = await apiService.getMembershipRevenue(startDateTime, endDateTime);
+      if (revenueResponse.success) {
+        revenue = revenueResponse.data.totalRevenue || 0;
+      }
+    } catch (error) {
+      console.error('Failed to fetch membership revenue:', error);
+      // Fallback to estimated revenue if API fails
+      if (customers && customers.length > 0) {
+        const activeMembers = customers.filter(customer => 
+          customer.hasMembership && 
+          customer.membership && 
+          customer.membership.isActive &&
+          customer.membership.expiryDate &&
+          new Date(customer.membership.expiryDate) > new Date()
+        );
+        revenue = activeMembers.reduce((total, member) => {
+          const membershipType = member.membership?.membershipType || 'monthly';
+          const amounts = {
+            monthly: 500,
+            quarterly: 1200,
+            yearly: 4000,
+            premium: 6000
+          };
+          return total + (amounts[membershipType] || 500);
+        }, 0);
+      }
+    }
 
-    // For revenue, we'll use a placeholder calculation since we don't have payment data yet
-    // This will be replaced with actual MembershipPayment data once implemented
-    const revenue = activeMembers.reduce((total, member) => {
-      const membershipType = member.membership?.membershipType || 'monthly';
-      const amounts = {
-        monthly: 500,
-        quarterly: 1200,
-        yearly: 4000,
-        premium: 6000
-      };
-      return total + (amounts[membershipType] || 500);
-    }, 0);
-
-    return { count: activeMembers.length, revenue };
+    return { count, revenue };
   };
 
   const fetchAnalyticsData = async () => {
@@ -184,8 +205,8 @@ const Analytics = () => {
         return total + amount;
       }, 0);
 
-      // Calculate membership analytics from customers data
-      const membershipAnalytics = calculateMembershipAnalytics();
+      // Calculate membership analytics from customers data and API
+      const membershipAnalytics = await calculateMembershipAnalytics();
       
       setAnalytics({
         totalBookings: filteredBookingsForAnalytics.length,

@@ -156,11 +156,18 @@ const MembershipPurchase = () => {
         setCreatedCustomer(customerResponse.data.customer);
       }
       
-      // Step 3: Create membership for the customer
+      // Step 3: Create membership for the customer with payment details
       const membershipData = {
         membershipType: 'monthly',
         validityTerm: 1, // 1 month
-        vehicleTypes: [customerData.vehicleType] // Array with current vehicle type
+        vehicleTypes: [customerData.vehicleType], // Array with current vehicle type
+        paymentDetails: {
+          amount: membershipPrice,
+          method: paymentMethod,
+          transactionId: `TXN${Date.now()}`, // Generate transaction ID
+          reference: `REF${Date.now()}`,
+          notes: `Membership purchase for ${customerData.firstName} ${customerData.lastName}`
+        }
       };
       
       const membershipResponse = await apiService.createMembership(customerId, membershipData);

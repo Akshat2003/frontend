@@ -382,6 +382,16 @@ class ApiService {
   }
 
 
+  // Membership Payment endpoints
+  async getMembershipRevenue(startDate, endDate) {
+    const params = new URLSearchParams();
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    const queryString = params.toString();
+    const endpoint = queryString ? `/membership-payments/revenue?${queryString}` : '/membership-payments/revenue';
+    return this.request(endpoint);
+  }
+
   // Site endpoints
   async getSites(filters = {}) {
     const queryParams = new URLSearchParams();
