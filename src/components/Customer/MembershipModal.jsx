@@ -78,10 +78,20 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
 
     try {
       // Validate that vehicle types are selected
-      if (!membershipData.vehicleTypes || membershipData.vehicleTypes.length === 0) {
-        setErrors({ submit: 'Please select at least one vehicle type' });
-        setIsCreating(false);
-        return;
+      if (hasAnyActiveMembership) {
+        // When extending membership, check for new vehicle types
+        if (!newVehicleTypes || newVehicleTypes.length === 0) {
+          setErrors({ submit: 'Please select at least one new vehicle type to add' });
+          setIsCreating(false);
+          return;
+        }
+      } else {
+        // When creating new membership, check for any vehicle types
+        if (!membershipData.vehicleTypes || membershipData.vehicleTypes.length === 0) {
+          setErrors({ submit: 'Please select at least one vehicle type' });
+          setIsCreating(false);
+          return;
+        }
       }
 
       // Create membership using new customer-level API
@@ -154,6 +164,19 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
   };
 
   const hasActiveMembership = hasActiveMembershipForVehicleTypes(membershipData.vehicleTypes);
+  
+  // Check if there are any new vehicle types to add (not already covered)
+  const getNewVehicleTypes = () => {
+    if (!customer.membership?.isActive || !customer.membership?.expiryDate || new Date(customer.membership.expiryDate) <= new Date()) {
+      return membershipData.vehicleTypes; // All types are new if no active membership
+    }
+    
+    const existingVehicleTypes = customer.membership?.vehicleTypes || [customer.membership?.vehicleType || 'two-wheeler'];
+    return membershipData.vehicleTypes.filter(vt => !existingVehicleTypes.includes(vt));
+  };
+  
+  const newVehicleTypes = getNewVehicleTypes();
+  const hasNewVehicleTypes = newVehicleTypes.length > 0;
   
   // Check if customer has ANY active membership (for deactivation purposes)
   const hasAnyActiveMembership = customer.membership?.isActive && 
@@ -324,21 +347,37 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
           </div>
         )}
 
-        {/* Create Membership Form */}
+        {/* Create/Extend Membership Form */}
         {!hasActiveMembership && (
           <div className="bg-white border border-gray-200 rounded-lg p-4">
-            <h4 className="font-semibold text-gray-900 mb-4">Create New Membership</h4>
+            <h4 className="font-semibold text-gray-900 mb-4">
+              {hasAnyActiveMembership && hasNewVehicleTypes 
+                ? `Extend Membership (Add ${newVehicleTypes.join(', ')})`
+                : 'Create New Membership'}
+            </h4>
             
             <div className="space-y-4">
+              {hasAnyActiveMembership && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-sm text-blue-800">
+                    <strong>Current membership covers:</strong> {(customer.membership?.vehicleTypes || [customer.membership?.vehicleType || 'two-wheeler']).join(', ')}
+                  </p>
+                  <p className="text-xs text-blue-600 mt-1">
+                    Select additional vehicle types to extend your membership coverage
+                  </p>
+                </div>
+              )}
+              
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Vehicle Types Covered
+                  Vehicle Types {hasAnyActiveMembership ? 'to Add' : 'Covered'}
                 </label>
                 <div className="space-y-2">
                   <label className="flex items-center">
                     <input
                       type="checkbox"
                       checked={membershipData.vehicleTypes.includes('two-wheeler')}
+                      disabled={hasAnyActiveMembership && (customer.membership?.vehicleTypes || [customer.membership?.vehicleType]).includes('two-wheeler')}
                       onChange={(e) => {
                         const isChecked = e.target.checked;
                         setMembershipData(prev => ({
@@ -348,16 +387,24 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
                             : prev.vehicleTypes.filter(vt => vt !== 'two-wheeler')
                         }));
                       }}
-                      className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                      className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     />
-                    <span className="ml-2 text-sm text-gray-900">
+                    <span className={`ml-2 text-sm ${
+                      hasAnyActiveMembership && (customer.membership?.vehicleTypes || [customer.membership?.vehicleType]).includes('two-wheeler')
+                        ? 'text-gray-500'
+                        : 'text-gray-900'
+                    }`}>
                       Two Wheeler (₹750/month)
+                      {hasAnyActiveMembership && (customer.membership?.vehicleTypes || [customer.membership?.vehicleType]).includes('two-wheeler') && (
+                        <span className="text-xs text-green-600 ml-1">✓ Already covered</span>
+                      )}
                     </span>
                   </label>
                   <label className="flex items-center">
                     <input
                       type="checkbox"
                       checked={membershipData.vehicleTypes.includes('four-wheeler')}
+                      disabled={hasAnyActiveMembership && (customer.membership?.vehicleTypes || [customer.membership?.vehicleType]).includes('four-wheeler')}
                       onChange={(e) => {
                         const isChecked = e.target.checked;
                         setMembershipData(prev => ({
@@ -367,14 +414,24 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
                             : prev.vehicleTypes.filter(vt => vt !== 'four-wheeler')
                         }));
                       }}
-                      className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                      className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     />
-                    <span className="ml-2 text-sm text-gray-900">
+                    <span className={`ml-2 text-sm ${
+                      hasAnyActiveMembership && (customer.membership?.vehicleTypes || [customer.membership?.vehicleType]).includes('four-wheeler')
+                        ? 'text-gray-500'
+                        : 'text-gray-900'
+                    }`}>
                       Four Wheeler (₹1000/month)
+                      {hasAnyActiveMembership && (customer.membership?.vehicleTypes || [customer.membership?.vehicleType]).includes('four-wheeler') && (
+                        <span className="text-xs text-green-600 ml-1">✓ Already covered</span>
+                      )}
                     </span>
                   </label>
                 </div>
-                {membershipData.vehicleTypes.length === 0 && (
+                {newVehicleTypes.length === 0 && hasAnyActiveMembership && (
+                  <p className="text-orange-500 text-sm mt-1">No new vehicle types selected to add</p>
+                )}
+                {membershipData.vehicleTypes.length === 0 && !hasAnyActiveMembership && (
                   <p className="text-red-500 text-sm mt-1">Please select at least one vehicle type</p>
                 )}
               </div>
@@ -411,7 +468,7 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
 
               <Button
                 onClick={handleCreateMembership}
-                disabled={isCreating || membershipData.vehicleTypes.length === 0}
+                disabled={isCreating || (!hasAnyActiveMembership && membershipData.vehicleTypes.length === 0) || (hasAnyActiveMembership && newVehicleTypes.length === 0)}
                 className="w-full"
               >
                 {isCreating ? (
@@ -422,7 +479,9 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
                 ) : (
                   <>
                     <CreditCard size={16} className="mr-2" />
-                    Create Membership
+                    {hasAnyActiveMembership && hasNewVehicleTypes 
+                      ? `Extend Membership`
+                      : 'Create Membership'}
                   </>
                 )}
               </Button>
