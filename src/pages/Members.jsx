@@ -44,7 +44,11 @@ const Members = () => {
         setMembers(response.data.members || []);
         setPagination(response.data.pagination || null);
       } else {
-        throw new Error(response.message || 'Failed to fetch members');
+        // Handle case where endpoint doesn't exist or returns error
+        console.warn('Active members API not available:', response.message);
+        setMembers([]);
+        setPagination(null);
+        // Don't throw error - just show empty state
       }
     } catch (err) {
       setError(err.message);
