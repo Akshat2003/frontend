@@ -8,7 +8,7 @@ const Header = ({ title, user, onLogout }) => {
   const { currentSite, availableSites, changeSite, canChangeSite } = useSite();
 
   const handleLogout = () => {
-    setShowDropdown(false);
+    setShowDropdown(false); 
     onLogout();
   };
 
