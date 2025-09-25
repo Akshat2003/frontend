@@ -17,6 +17,7 @@ import BookingInfoModal from '../components/Booking/BookingInfoModal';
 import Button from '../components/Common/Button';
 import { formatCurrency } from '../utils/calculations';
 import { exportBookingsToPDF } from '../utils/pdfExport';
+import { exportBookingsToExcel } from '../utils/excelExport';
 import apiService from '../services/api';
 import { useSite } from '../contexts/SiteContext';
 import { useCustomers } from '../hooks/useCustomers';
@@ -42,6 +43,7 @@ const Analytics = () => {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [exportLoading, setExportLoading] = useState(false);
+  const [excelExportLoading, setExcelExportLoading] = useState(false);
 
   const { currentSite } = useSite();
   const { customers, getCustomers } = useCustomers();
@@ -281,6 +283,48 @@ const Analytics = () => {
     }
   };
 
+  const handleExcelExport = async () => {
+    if (!currentSite?._id && !currentSite?.siteId) {
+      setError('No site selected for export');
+      return;
+    }
+
+    setExcelExportLoading(true);
+    setError(null);
+
+    try {
+      const siteId = currentSite?._id || currentSite?.siteId;
+      
+      // Fetch all bookings for the site (no date or payment filter)
+      const response = await apiService.getBookings({
+        siteId,
+        limit: 10000, // Get all bookings
+        sortBy: 'createdAt',
+        sortOrder: 'desc'
+      });
+
+      const allBookings = response.data?.bookings || [];
+      
+      if (allBookings.length === 0) {
+        setError('No bookings found for this site');
+        return;
+      }
+
+      // Export to Excel
+      exportBookingsToExcel(
+        allBookings, 
+        currentSite?.siteName || 'Unknown Site',
+        currentSite?.siteId || currentSite?._id || 'Unknown'
+      );
+
+    } catch (error) {
+      console.error('Excel export failed:', error);
+      setError(error.message || 'Failed to export Excel file');
+    } finally {
+      setExcelExportLoading(false);
+    }
+  };
+
   // Filter bookings based on search term and payment method
   const filteredBookings = bookings.filter(booking => {
     // Search filter
@@ -329,11 +373,11 @@ const Analytics = () => {
             )}
           </div>
         </div>
-        <div className="flex-shrink-0">
+        <div className="flex-shrink-0 flex space-x-2">
           <Button
             onClick={handleExport}
             disabled={exportLoading || !currentSite}
-            className="bg-green-600 hover:bg-green-700 text-white"
+            className="bg-red-600 hover:bg-red-700 text-white"
           >
             {exportLoading ? (
               <RefreshCw className="animate-spin" size={16} />
@@ -342,6 +386,21 @@ const Analytics = () => {
             )}
             <span className="ml-2">
               {exportLoading ? 'Exporting...' : 'Export PDF'}
+            </span>
+          </Button>
+          
+          <Button
+            onClick={handleExcelExport}
+            disabled={excelExportLoading || !currentSite}
+            className="bg-green-600 hover:bg-green-700 text-white"
+          >
+            {excelExportLoading ? (
+              <RefreshCw className="animate-spin" size={16} />
+            ) : (
+              <Download size={16} />
+            )}
+            <span className="ml-2">
+              {excelExportLoading ? 'Exporting...' : 'Export Excel'}
             </span>
           </Button>
         </div>

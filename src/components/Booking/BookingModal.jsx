@@ -43,11 +43,32 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
   const [isMembershipProcessing, setIsMembershipProcessing] = useState(false);
   const { deleteBooking } = useBookings();
 
+  // Auto-select membership payment when customer has valid membership
+  useEffect(() => {
+    if (!booking) return;
+    
+    // Only check for membership logic if we have the necessary data
+    const hasActiveMembership = customerData?.membership?.isActive && 
+                                customerData?.membership?.membershipNumber && 
+                                customerData?.membership?.expiryDate && 
+                                new Date(customerData.membership.expiryDate) > new Date();
+    
+    const membershipVehicleTypes = customerData?.membership?.vehicleTypes || ['two-wheeler', 'four-wheeler'];
+    const vehicleTypeMatches = customerData?.membershipValidated === true ? true : membershipVehicleTypes.includes(booking?.vehicleType);
+    const canUseMembership = hasActiveMembership && (customerData?.membershipValidated === true || vehicleTypeMatches);
+    
+    if (canUseMembership && currentPage === 'payment' && !paymentMethod) {
+      setPaymentMethod('membership');
+      console.log('Auto-selected membership payment method');
+    }
+  }, [booking, customerData, currentPage, paymentMethod]);
+
   if (!booking) return null;
 
   const currentTime = new Date();
   const parkingFee = calculateParkingFee(booking.startTime, currentTime, booking.vehicleType);
   const duration = formatDuration(booking.startTime);
+  
   const VehicleIcon = booking.vehicleType === 'two-wheeler' ? Bike : Car;
 
   // Fetch customer data when payment method page is accessed
@@ -135,6 +156,7 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
     bookingVehicleType: booking?.vehicleType,
     membershipVehicleTypes
   });
+
 
   const handleClose = () => {
     setCurrentPage('details');
@@ -424,9 +446,12 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
         
         {/* Cash Payment */}
         <button
-          onClick={() => handlePaymentMethodSelect('cash')}
+          onClick={() => !canUseMembership && handlePaymentMethodSelect('cash')}
+          disabled={canUseMembership}
           className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
-            paymentMethod === 'cash'
+            canUseMembership
+              ? 'border-gray-300 bg-gray-100 opacity-60 cursor-not-allowed'
+              : paymentMethod === 'cash'
               ? 'border-green-500 bg-green-50 shadow-sm'
               : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
           }`}
@@ -436,8 +461,10 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
               <DollarSign className={`${paymentMethod === 'cash' ? 'text-green-600' : 'text-gray-600'}`} size={20} />
             </div>
             <div>
-              <h5 className="font-semibold text-gray-900">Cash Payment</h5>
-              <p className="text-sm text-gray-600">Collect cash directly from customer</p>
+              <h5 className={`font-semibold ${canUseMembership ? 'text-gray-500' : 'text-gray-900'}`}>Cash Payment</h5>
+              <p className={`text-sm ${canUseMembership ? 'text-gray-500' : 'text-gray-600'}`}>
+                {canUseMembership ? 'Disabled - Customer has active membership' : 'Collect cash directly from customer'}
+              </p>
             </div>
             {paymentMethod === 'cash' && (
               <div className="ml-auto">
@@ -449,9 +476,12 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
 
         {/* UPI Payment */}
         <button
-          onClick={() => handlePaymentMethodSelect('upi')}
+          onClick={() => !canUseMembership && handlePaymentMethodSelect('upi')}
+          disabled={canUseMembership}
           className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
-            paymentMethod === 'upi'
+            canUseMembership
+              ? 'border-gray-300 bg-gray-100 opacity-60 cursor-not-allowed'
+              : paymentMethod === 'upi'
               ? 'border-blue-500 bg-blue-50 shadow-sm'
               : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
           }`}
@@ -461,8 +491,10 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
               <QrCode className={`${paymentMethod === 'upi' ? 'text-blue-600' : 'text-gray-600'}`} size={20} />
             </div>
             <div>
-              <h5 className="font-semibold text-gray-900">UPI/Online Payment</h5>
-              <p className="text-sm text-gray-600">Customer pays via UPI QR code or online</p>
+              <h5 className={`font-semibold ${canUseMembership ? 'text-gray-500' : 'text-gray-900'}`}>UPI/Online Payment</h5>
+              <p className={`text-sm ${canUseMembership ? 'text-gray-500' : 'text-gray-600'}`}>
+                {canUseMembership ? 'Disabled - Customer has active membership' : 'Customer pays via UPI QR code or online'}
+              </p>
             </div>
             {paymentMethod === 'upi' && (
               <div className="ml-auto">
