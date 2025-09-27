@@ -25,6 +25,7 @@ import Button from '../Common/Button';
 import Input from '../Common/Input';
 import { calculateParkingFee, formatCurrency, formatDuration } from '../../utils/calculations';
 import { useBookings } from '../../hooks/useBookings';
+import { useSite } from '../../contexts/SiteContext';
 import apiService from '../../services/api';
 
 const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
@@ -42,6 +43,45 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
   const [membershipPaymentMethod, setMembershipPaymentMethod] = useState('');
   const [isMembershipProcessing, setIsMembershipProcessing] = useState(false);
   const { deleteBooking } = useBookings();
+  const { currentSite } = useSite();
+
+  // Get site-specific QR code
+  const getSiteQRCode = () => {
+    if (!currentSite) {
+      return '/PaymentQR.png'; // Default fallback
+    }
+
+    const { siteName, siteId } = currentSite;
+    
+    // Check by site name first (case insensitive)
+    if (siteName) {
+      const siteNameLower = siteName.toLowerCase();
+      
+      if (siteNameLower.includes('anaj') || siteNameLower.includes('market')) {
+        return '/qr_anaj.png';
+      }
+      
+      if (siteNameLower.includes('sitabuldi')) {
+        return '/qr_sitabuldi.png';
+      }
+    }
+    
+    // Check by site ID if site name doesn't match
+    if (siteId) {
+      const siteIdLower = siteId.toLowerCase();
+      
+      if (siteIdLower.includes('anaj') || siteIdLower.includes('market')) {
+        return '/qr_anaj.png';
+      }
+      
+      if (siteIdLower.includes('sitabuldi')) {
+        return '/qr_sitabuldi.png';
+      }
+    }
+    
+    // Fallback to default QR code for unknown sites
+    return '/PaymentQR.png';
+  };
 
   // Auto-select membership payment when customer has valid membership
   useEffect(() => {
@@ -601,7 +641,7 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
           <h5 className="font-semibold text-blue-900 mb-4">Show QR Code to Customer</h5>
           <div className="bg-white p-4 rounded-lg inline-block border-2 border-solid border-blue-300 shadow-sm">
             <img 
-              src="/PaymentQR.png" 
+              src={getSiteQRCode()} 
               alt="Payment QR Code" 
               className="w-48 h-48 object-contain rounded-lg"
               onError={(e) => {
@@ -876,7 +916,7 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
               <h5 className="font-semibold text-blue-900 mb-3">Show QR Code to Customer</h5>
               <div className="bg-white p-3 rounded-lg inline-block border shadow-sm">
                 <img 
-                  src="/PaymentQR.png" 
+                  src={getSiteQRCode()} 
                   alt="Payment QR Code" 
                   className="w-32 h-32 object-contain"
                   onError={(e) => {
