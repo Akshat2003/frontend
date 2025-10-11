@@ -30,9 +30,10 @@ const ActiveListings = () => {
   // Fetch bookings filtered by current site when site changes
   useEffect(() => {
     if (currentSite) {
-      fetchBookings({ 
+      fetchBookings({
         siteId: currentSite._id || currentSite.siteId,
-        status: 'active' // Only fetch active bookings for this page
+        status: 'active', // Only fetch active bookings for this page
+        limit: 1000 // Fetch all active bookings
       });
     }
   }, [currentSite, fetchBookings]);
@@ -42,9 +43,10 @@ const ActiveListings = () => {
     const handleSiteChange = (event) => {
       const { site } = event.detail;
       if (site) {
-        fetchBookings({ 
+        fetchBookings({
           siteId: site._id || site.siteId,
-          status: 'active'
+          status: 'active',
+          limit: 1000
         });
       }
     };
