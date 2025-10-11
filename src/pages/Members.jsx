@@ -8,23 +8,46 @@ const Members = () => {
   const [activeMembers, setActiveMembers] = useState([]);
 
   useEffect(() => {
-    getCustomers({ 
-      limit: 1000, // Get all customers
+    getCustomers({
+      limit: 2000, // Increased limit to get all customers (currently 1397 total)
       sortBy: 'createdAt',
       sortOrder: 'desc'
     });
+
+    // Listen for membership creation events
+    const handleMembershipCreated = () => {
+      getCustomers({
+        limit: 2000,
+        sortBy: 'createdAt',
+        sortOrder: 'desc'
+      });
+    };
+
+    window.addEventListener('membershipCreated', handleMembershipCreated);
+
+    return () => {
+      window.removeEventListener('membershipCreated', handleMembershipCreated);
+    };
   }, []);
 
   useEffect(() => {
     if (customers && customers.length > 0) {
-      // Filter customers with active memberships
-      const membersWithActiveMembership = customers.filter(customer => 
-        customer.hasMembership && 
-        customer.membership && 
+      // Filter customers with active, non-expired memberships only
+      const membersWithActiveMembership = customers.filter(customer =>
+        customer.hasMembership &&
+        customer.membership &&
         customer.membership.isActive &&
         customer.membership.expiryDate &&
         new Date(customer.membership.expiryDate) > new Date()
       );
+
+      // Sort by membership creation date (newest first)
+      membersWithActiveMembership.sort((a, b) => {
+        const dateA = new Date(a.membership.createdAt || a.membership.startDate);
+        const dateB = new Date(b.membership.createdAt || b.membership.startDate);
+        return dateB - dateA; // Descending order (newest first)
+      });
+
       setActiveMembers(membersWithActiveMembership);
     }
   }, [customers]);

@@ -257,17 +257,22 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
       // Call the API to create/extend membership
       const response = await apiService.createMembership(customerId, membershipData);
       console.log('Membership creation response:', response);
-      
+
       // Wait a moment for database to update, then refresh customer data
       setTimeout(async () => {
         await fetchCustomerData();
       }, 1000);
-      
+
+      // Dispatch custom event to notify other components (e.g., Members page)
+      window.dispatchEvent(new CustomEvent('membershipCreated', {
+        detail: { customerId, membershipData, response }
+      }));
+
       // Close membership modal
       setShowMembershipModal(false);
       setMembershipPaymentMethod('');
-      
-      // Show success message  
+
+      // Show success message
       alert(`Monthly pass ${hasActiveMembership ? 'extended' : 'purchased'} successfully for ${formatCurrency(membershipPrice)}! Customer can now use membership payment for ${booking.vehicleType} parking.`);
       
     } catch (error) {
