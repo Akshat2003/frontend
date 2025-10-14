@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Car, 
-  Bike, 
-  User, 
-  Smartphone, 
-  Wrench, 
-  Hash, 
-  Clock, 
-  DollarSign, 
-  CreditCard, 
-  ArrowLeft, 
+import {
+  Car,
+  Bike,
+  User,
+  Smartphone,
+  Wrench,
+  Hash,
+  Clock,
+  DollarSign,
+  CreditCard,
+  ArrowLeft,
   CheckCircle,
   Loader2,
   AlertCircle,
@@ -23,9 +23,11 @@ import {
 import Modal from '../Common/Modal';
 import Button from '../Common/Button';
 import Input from '../Common/Input';
+import SMSStatusModal from '../Common/SMSStatusModal';
 import { calculateParkingFee, formatCurrency, formatDuration } from '../../utils/calculations';
 import { useBookings } from '../../hooks/useBookings';
 import { useSite } from '../../contexts/SiteContext';
+import { generateCompletionSMSMessage } from '../../utils/smsUtils';
 import apiService from '../../services/api';
 
 const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
@@ -42,6 +44,9 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
   const [showMembershipModal, setShowMembershipModal] = useState(false);
   const [membershipPaymentMethod, setMembershipPaymentMethod] = useState('');
   const [isMembershipProcessing, setIsMembershipProcessing] = useState(false);
+  const [showCompletionSMSModal, setShowCompletionSMSModal] = useState(false);
+  const [completionSMSMessage, setCompletionSMSMessage] = useState('');
+  const [completedBookingData, setCompletedBookingData] = useState(null);
   const { deleteBooking } = useBookings();
   const { currentSite } = useSite();
 
@@ -316,7 +321,7 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
       }
 
       setPaymentStatus('completed');
-      
+
       // Complete the booking after a short delay to show success message
       setTimeout(() => {
         const completedBooking = {
@@ -337,10 +342,33 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
             }
           })
         };
-        
+
+        // Generate completion SMS message
+        const smsMessage = generateCompletionSMSMessage({
+          customerName: booking.customerName,
+          vehicleNumber: booking.vehicleNumber,
+          machineNumber: booking.machineNumber,
+          palletNumber: booking.palletNumber,
+          palletName: booking.palletName,
+          startTime: booking.startTime,
+          endTime: completedBooking.endTime,
+          duration: duration,
+          amount: paymentMethod === 'membership' ? finalAmount : parkingFee,
+          paymentMethod: paymentMethod === 'membership' ? 'Membership (Free)' : paymentMethod.charAt(0).toUpperCase() + paymentMethod.slice(1),
+          vehicleType: booking.vehicleType,
+          bookingNumber: booking.bookingNumber
+        });
+
+        // Store completed booking data and SMS message
+        setCompletedBookingData(completedBooking);
+        setCompletionSMSMessage(smsMessage);
+
+        // Complete the booking via callback
         onComplete(completedBooking);
         setIsProcessing(false);
-        handleClose();
+
+        // Show SMS modal instead of closing
+        setShowCompletionSMSModal(true);
       }, 2000);
 
     } catch (error) {
@@ -1029,6 +1057,26 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
           </div>
         </div>
       </Modal>
+
+      {/* Completion SMS Modal */}
+      {showCompletionSMSModal && completedBookingData && (
+        <SMSStatusModal
+          isOpen={showCompletionSMSModal}
+          onClose={() => {
+            setShowCompletionSMSModal(false);
+            handleClose();
+          }}
+          phoneNumber={completedBookingData.phoneNumber}
+          message={completionSMSMessage}
+          bookingDetails={{
+            customerName: completedBookingData.customerName,
+            vehicleNumber: completedBookingData.vehicleNumber,
+            machineNumber: completedBookingData.machineNumber,
+            otp: `₹${formatCurrency(completedBookingData.totalAmount)}`
+          }}
+          autoClose={false}
+        />
+      )}
     </>
   );
 };

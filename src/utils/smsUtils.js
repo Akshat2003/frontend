@@ -3,20 +3,20 @@ export const generateOTP = () => {
 };
 
 export const generateSMSMessage = (bookingDetails) => {
-  const { 
-    customerName, 
-    vehicleNumber, 
-    machineNumber, 
-    palletNumber, 
+  const {
+    customerName,
+    vehicleNumber,
+    machineNumber,
+    palletNumber,
     palletName,
-    otp, 
-    vehicleType, 
-    bookingNumber 
+    otp,
+    vehicleType,
+    bookingNumber
   } = bookingDetails;
-  
+
   const palletDisplay = palletName ? palletName : `Pallet ${palletNumber}`;
   const bookingRef = bookingNumber ? `\nBooking: ${bookingNumber}` : '';
-  
+
   const message = `Hello ${customerName},
 
 Your parking has been confirmed!
@@ -27,6 +27,63 @@ Location: ${palletDisplay}
 OTP: ${otp}${bookingRef}
 
 Please keep your OTP safe for vehicle retrieval.
+
+Thank you for using Sparkee Parking!`;
+
+  return message;
+};
+
+export const generateCompletionSMSMessage = (completionDetails) => {
+  const {
+    customerName,
+    vehicleNumber,
+    machineNumber,
+    palletNumber,
+    palletName,
+    startTime,
+    endTime,
+    duration,
+    amount,
+    paymentMethod,
+    vehicleType,
+    bookingNumber
+  } = completionDetails;
+
+  const palletDisplay = palletName ? palletName : `Pallet ${palletNumber}`;
+  const bookingRef = bookingNumber ? `\nBooking: ${bookingNumber}` : '';
+
+  // Format dates
+  const formatDateTime = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  };
+
+  // Format currency
+  const formatAmount = (amt) => {
+    return `₹${parseFloat(amt).toFixed(2)}`;
+  };
+
+  const message = `Hello ${customerName},
+
+Your parking session has been completed!
+
+Vehicle: ${vehicleNumber}${vehicleType ? ` (${vehicleType.replace('-', ' ')})` : ''}
+Machine: ${machineNumber}
+Location: ${palletDisplay}
+
+Start Time: ${formatDateTime(startTime)}
+End Time: ${formatDateTime(endTime)}
+Duration: ${duration}
+
+Amount Paid: ${formatAmount(amount)}
+Payment Method: ${paymentMethod}${bookingRef}
 
 Thank you for using Sparkee Parking!`;
 

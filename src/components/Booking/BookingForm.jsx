@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { User, Car, Bike, Wrench, Hash, Smartphone, CheckCircle, Plus } from 'lucide-react';
 import Input from '../Common/Input';
 import Select from '../Common/Select';
@@ -8,6 +8,7 @@ import { useBookings } from '../../hooks/useBookings';
 import { useMachines } from '../../hooks/useMachines';
 import { useSite } from '../../contexts/SiteContext';
 import { generateOTP, generateSMSMessage, openSMSAppSimple } from '../../utils/smsUtils';
+import apiService from '../../services/api';
 
 const BookingForm = ({ onBookingComplete }) => {
   const [customerData, setCustomerData] = useState({
@@ -25,6 +26,9 @@ const BookingForm = ({ onBookingComplete }) => {
   const [showSMSModal, setShowSMSModal] = useState(false);
   const [completedBooking, setCompletedBooking] = useState(null);
   const [smsMessage, setSMSMessage] = useState('');
+  const [membershipStatus, setMembershipStatus] = useState(null); // 'active', 'inactive', 'checking', or null
+  const [membershipData, setMembershipData] = useState(null);
+  const debounceTimerRef = useRef(null);
 
   const { createBooking, loading } = useBookings();
   const { currentSite } = useSite();
@@ -96,6 +100,59 @@ const BookingForm = ({ onBookingComplete }) => {
         });
     }
   }, [bookingData.machineNumber, getMachinePallets]);
+
+  // Check membership status when phone number changes (with debounce)
+  useEffect(() => {
+    // Clear previous timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    // Reset membership status if phone number is empty or invalid
+    const cleanPhone = customerData.phoneNumber.replace(/\s|-/g, '');
+    if (!cleanPhone || cleanPhone.length < 10) {
+      setMembershipStatus(null);
+      setMembershipData(null);
+      return;
+    }
+
+    // Validate phone number format (10 digits)
+    if (!/^\d{10}$/.test(cleanPhone)) {
+      setMembershipStatus(null);
+      setMembershipData(null);
+      return;
+    }
+
+    // Set checking status
+    setMembershipStatus('checking');
+
+    // Debounce API call by 500ms
+    debounceTimerRef.current = setTimeout(async () => {
+      try {
+        const response = await apiService.checkMembershipByPhone(cleanPhone);
+
+        if (response.data.hasActiveMembership) {
+          setMembershipStatus('active');
+          setMembershipData(response.data.membership);
+        } else {
+          setMembershipStatus('inactive');
+          setMembershipData(null);
+        }
+      } catch (error) {
+        console.error('Error checking membership:', error);
+        // Silently fail - don't show error to user, just reset status
+        setMembershipStatus(null);
+        setMembershipData(null);
+      }
+    }, 500);
+
+    // Cleanup function
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [customerData.phoneNumber]);
 
   // Reset dependent fields when parent field changes
   const handleVehicleTypeChange = (e) => {
@@ -273,6 +330,8 @@ const BookingForm = ({ onBookingComplete }) => {
         palletNumber: '',
       });
       setErrors({});
+      setMembershipStatus(null); // Reset membership status
+      setMembershipData(null); // Reset membership data
       resetMachineStates(); // Reset machine states when form is cleared
       
       // Call onBookingComplete callback
@@ -340,6 +399,7 @@ const BookingForm = ({ onBookingComplete }) => {
             error={errors.phoneNumber}
             required
             placeholder="Enter phone number"
+            membershipStatus={membershipStatus}
           />
 
           <Input

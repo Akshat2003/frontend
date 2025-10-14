@@ -392,6 +392,10 @@ class ApiService {
     return this.request(endpoint);
   }
 
+  async checkMembershipByPhone(phoneNumber) {
+    return this.request(`/membership-payments/check-membership/${phoneNumber}`);
+  }
+
   // Site endpoints
   async getSites(filters = {}) {
     const queryParams = new URLSearchParams();
