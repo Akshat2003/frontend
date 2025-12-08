@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { 
+import {
   Calendar,
-  DollarSign, 
+  DollarSign,
   BarChart3,
   Activity,
   AlertCircle,
@@ -11,7 +11,8 @@ import {
   CheckCircle,
   Download,
   Shield,
-  CreditCard
+  CreditCard,
+  Trash2
 } from 'lucide-react';
 import BookingInfoModal from '../components/Booking/BookingInfoModal';
 import Button from '../components/Common/Button';
@@ -44,6 +45,7 @@ const Analytics = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [exportLoading, setExportLoading] = useState(false);
   const [excelExportLoading, setExcelExportLoading] = useState(false);
+  const [showDeletedBookings, setShowDeletedBookings] = useState(false);
 
   const { currentSite } = useSite();
   const { customers, getCustomers } = useCustomers();
@@ -325,7 +327,7 @@ const Analytics = () => {
     }
   };
 
-  // Filter bookings based on search term and payment method
+  // Filter bookings based on search term, payment method, and deleted status
   const filteredBookings = bookings.filter(booking => {
     // Search filter
     const matchesSearch = !searchTerm || (
@@ -334,13 +336,18 @@ const Analytics = () => {
       booking.phoneNumber?.includes(searchTerm) ||
       booking.machineNumber?.toLowerCase().includes(searchTerm.toLowerCase())
     );
-    
+
     // Payment method filter
-    const matchesPaymentMethod = paymentMethodFilter === 'all' || 
-      booking.payment?.method === paymentMethodFilter || 
+    const matchesPaymentMethod = paymentMethodFilter === 'all' ||
+      booking.payment?.method === paymentMethodFilter ||
       booking.paymentMethod === paymentMethodFilter;
-    
-    return matchesSearch && matchesPaymentMethod;
+
+    // Deleted status filter
+    const matchesDeletedStatus = showDeletedBookings
+      ? booking.status === 'deleted'
+      : booking.status !== 'deleted';
+
+    return matchesSearch && matchesPaymentMethod && matchesDeletedStatus;
   });
 
   const getStatusBadgeClass = (status) => {
@@ -576,6 +583,15 @@ const Analytics = () => {
                   className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
               </div>
+              <Button
+                onClick={() => setShowDeletedBookings(!showDeletedBookings)}
+                variant={showDeletedBookings ? "primary" : "outline"}
+                size="sm"
+                className={showDeletedBookings ? "bg-red-600 hover:bg-red-700 text-white" : ""}
+              >
+                <Trash2 size={14} />
+                <span className="ml-1">{showDeletedBookings ? 'Show All' : 'Show Deleted'}</span>
+              </Button>
               <span className="bg-purple-100 text-purple-800 text-xs font-medium px-2 py-1 rounded-full text-center sm:text-left">
                 {filteredBookings.length}
               </span>
