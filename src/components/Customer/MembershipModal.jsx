@@ -94,8 +94,18 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
         }
       }
 
+      // Calculate the correct amount based on vehicle types and membership type
+      const termMultiplier = { monthly: 1, quarterly: 3, yearly: 12, premium: 24 };
+      const months = termMultiplier[membershipData.membershipType] || 1;
+      const amount = membershipData.vehicleTypes.reduce((total, vt) => {
+        return total + (vt === 'four-wheeler' ? 1000 : 750) * months;
+      }, 0);
+
       // Create membership using new customer-level API
-      const response = await apiService.createMembership(customer._id, membershipData);
+      const response = await apiService.createMembership(customer._id, {
+        ...membershipData,
+        paymentDetails: { amount }
+      });
       
       // Show the created credentials
       setShowCredentials(true);
