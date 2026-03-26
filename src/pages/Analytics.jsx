@@ -12,7 +12,14 @@ import {
   Download,
   Shield,
   CreditCard,
-  Trash2
+  Trash2,
+  X,
+  User,
+  Phone,
+  Clock,
+  Tag,
+  Copy,
+  CheckCheck
 } from 'lucide-react';
 import BookingInfoModal from '../components/Booking/BookingInfoModal';
 import Button from '../components/Common/Button';
@@ -46,6 +53,10 @@ const Analytics = () => {
   const [exportLoading, setExportLoading] = useState(false);
   const [excelExportLoading, setExcelExportLoading] = useState(false);
   const [showDeletedBookings, setShowDeletedBookings] = useState(false);
+  const [showMembershipModal, setShowMembershipModal] = useState(false);
+  const [membershipPayments, setMembershipPayments] = useState([]);
+  const [membershipPaymentsLoading, setMembershipPaymentsLoading] = useState(false);
+  const [copiedPaymentId, setCopiedPaymentId] = useState(null);
 
   const { currentSite } = useSite();
   const { customers, getCustomers } = useCustomers();
@@ -241,6 +252,87 @@ const Analytics = () => {
   const handleCloseInfoModal = () => {
     setIsInfoModalOpen(false);
     setSelectedBooking(null);
+  };
+
+  const handleMembershipRevenueClick = async () => {
+    setShowMembershipModal(true);
+    setMembershipPaymentsLoading(true);
+    try {
+      const startDateTime = new Date(dateRange.startDate + 'T00:00:00').toISOString();
+      const endDateTime = new Date(dateRange.endDate + 'T23:59:59').toISOString();
+      const response = await apiService.getMembershipPayments({
+        startDate: startDateTime,
+        endDate: endDateTime,
+        limit: 100
+      });
+      setMembershipPayments(response.data?.payments || []);
+    } catch (err) {
+      console.error('Failed to fetch membership payments:', err);
+      setMembershipPayments([]);
+    } finally {
+      setMembershipPaymentsLoading(false);
+    }
+  };
+
+  const formatPaymentForWhatsApp = (payment) => {
+    const lines = [
+      `*Membership Payment*`,
+      ``,
+      `*Membership #:* ${payment.membershipNumber}`,
+      `*Type:* ${payment.membershipType}`,
+      `*Status:* ${payment.status}`,
+      `*Amount:* ${formatCurrency(payment.amount)}`,
+      ``,
+      `*Customer:* ${payment.customerName}`,
+      `*Phone:* ${payment.customerPhone}`,
+      `*Vehicle:* ${payment.vehicleTypes?.map(v => v.replace('-', ' ')).join(', ') || 'N/A'}`,
+      ``,
+      `*Payment Method:* ${payment.paymentMethod}`,
+      `*Validity:* ${payment.validityTerm} month${payment.validityTerm > 1 ? 's' : ''}`,
+      `*Start:* ${new Date(payment.startDate).toLocaleDateString()}`,
+      `*Expiry:* ${new Date(payment.expiryDate).toLocaleDateString()}`,
+      ``,
+      `*Created By:* ${payment.createdBy?.name || payment.createdBy?.operatorId || 'N/A'}`,
+      `*Created At:* ${new Date(payment.createdAt).toLocaleString()}`,
+    ];
+    if (payment.transactionId) lines.push(`*Txn ID:* ${payment.transactionId}`);
+    if (payment.paymentReference) lines.push(`*Ref:* ${payment.paymentReference}`);
+    if (payment.notes) lines.push(`*Notes:* ${payment.notes}`);
+    return lines.join('\n');
+  };
+
+  const copyPaymentToClipboard = async (payment) => {
+    const text = formatPaymentForWhatsApp(payment);
+    await navigator.clipboard.writeText(text);
+    setCopiedPaymentId(payment._id);
+    setTimeout(() => setCopiedPaymentId(null), 2000);
+  };
+
+  const copyAllPaymentsToClipboard = async () => {
+    const header = [
+      `*Membership Revenue Report*`,
+      `*Site:* ${currentSite?.siteName || 'N/A'}`,
+      `*Period:* ${dateRange.startDate} to ${dateRange.endDate}`,
+      `*Total Revenue:* ${formatCurrency(analytics.membershipRevenue)}`,
+      `*Total Payments:* ${membershipPayments.length}`,
+      ``,
+      `${'—'.repeat(20)}`,
+    ].join('\n');
+
+    const entries = membershipPayments.map((p, i) =>
+      `\n*${i + 1}.* ${p.customerName} | ${p.membershipNumber}\n` +
+      `    Type: ${p.membershipType} | ${formatCurrency(p.amount)}\n` +
+      `    Phone: ${p.customerPhone}\n` +
+      `    Vehicle: ${(p.vehicleTypes?.map(v => v.replace('-', ' ')).join(', ')) || 'N/A'}\n` +
+      `    Valid: ${new Date(p.startDate).toLocaleDateString()} - ${new Date(p.expiryDate).toLocaleDateString()}\n` +
+      `    Payment: ${p.paymentMethod} | Status: ${p.status}\n` +
+      `    Created By: ${p.createdBy?.name || p.createdBy?.operatorId || 'N/A'}\n` +
+      `    Date: ${new Date(p.createdAt).toLocaleString()}`
+    ).join('\n');
+
+    await navigator.clipboard.writeText(header + '\n' + entries);
+    setCopiedPaymentId('all');
+    setTimeout(() => setCopiedPaymentId(null), 2000);
   };
 
   const handleExport = async () => {
@@ -532,7 +624,10 @@ const Analytics = () => {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 md:p-4">
+        <div
+          className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 md:p-4 cursor-pointer hover:shadow-md hover:border-indigo-200 transition-all"
+          onClick={handleMembershipRevenueClick}
+        >
           <div className="flex items-center space-x-2 md:space-x-3">
             <div className="bg-indigo-100 p-2 rounded-lg flex-shrink-0">
               <CreditCard className="text-indigo-600" size={16} />
@@ -542,6 +637,7 @@ const Analytics = () => {
               <p className="text-sm md:text-lg font-bold text-gray-900 break-words">
                 {formatCurrency(analytics.membershipRevenue)}
               </p>
+              <p className="text-xs text-indigo-500 mt-1">Click for details</p>
             </div>
           </div>
         </div>
@@ -780,6 +876,199 @@ const Analytics = () => {
         isOpen={isInfoModalOpen}
         onClose={handleCloseInfoModal}
       />
+
+      {/* Membership Revenue Details Modal */}
+      {showMembershipModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 md:p-6 border-b border-gray-200">
+              <div>
+                <h2 className="text-lg md:text-xl font-bold text-gray-900">Membership Revenue Details</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  {dateRange.startDate} to {dateRange.endDate} — Total: {formatCurrency(analytics.membershipRevenue)}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowMembershipModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X size={20} className="text-gray-500" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-4 md:p-6">
+              {membershipPaymentsLoading ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-4"></div>
+                  <p className="text-gray-500">Loading membership payments...</p>
+                </div>
+              ) : membershipPayments.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <CreditCard size={48} className="text-gray-300 mb-4" />
+                  <p className="text-gray-500 text-lg">No membership payments found</p>
+                  <p className="text-gray-400 text-sm mt-1">for the selected date range</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {membershipPayments.map((payment) => (
+                    <div
+                      key={payment._id}
+                      className="border border-gray-200 rounded-lg p-4 hover:border-indigo-200 hover:shadow-sm transition-all"
+                    >
+                      {/* Payment Header */}
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                        <div className="flex items-center space-x-3">
+                          <div className="bg-indigo-100 p-2 rounded-lg">
+                            <CreditCard className="text-indigo-600" size={18} />
+                          </div>
+                          <div>
+                            <h3 className="font-semibold text-gray-900">{payment.membershipNumber}</h3>
+                            <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full capitalize ${
+                              payment.membershipType === 'premium' ? 'bg-amber-100 text-amber-800' :
+                              payment.membershipType === 'yearly' ? 'bg-purple-100 text-purple-800' :
+                              payment.membershipType === 'quarterly' ? 'bg-blue-100 text-blue-800' :
+                              'bg-green-100 text-green-800'
+                            }`}>
+                              {payment.membershipType}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-right">
+                            <p className="text-lg font-bold text-indigo-600">{formatCurrency(payment.amount)}</p>
+                            <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full capitalize ${
+                              payment.status === 'completed' ? 'bg-green-100 text-green-800' :
+                              payment.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                              payment.status === 'refunded' ? 'bg-red-100 text-red-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {payment.status}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => copyPaymentToClipboard(payment)}
+                            className={`p-1.5 rounded-lg transition-colors ${
+                              copiedPaymentId === payment._id
+                                ? 'bg-green-100 text-green-600'
+                                : 'hover:bg-gray-100 text-gray-400 hover:text-gray-600'
+                            }`}
+                            title="Copy for WhatsApp"
+                          >
+                            {copiedPaymentId === payment._id ? <CheckCheck size={16} /> : <Copy size={16} />}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Payment Details Grid */}
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                        <div>
+                          <div className="flex items-center space-x-1 text-gray-500 mb-1">
+                            <User size={14} />
+                            <span className="font-medium">Customer</span>
+                          </div>
+                          <p className="text-gray-900">{payment.customerName}</p>
+                        </div>
+                        <div>
+                          <div className="flex items-center space-x-1 text-gray-500 mb-1">
+                            <Phone size={14} />
+                            <span className="font-medium">Phone</span>
+                          </div>
+                          <p className="text-gray-900">{payment.customerPhone}</p>
+                        </div>
+                        <div>
+                          <div className="flex items-center space-x-1 text-gray-500 mb-1">
+                            <Tag size={14} />
+                            <span className="font-medium">Payment Method</span>
+                          </div>
+                          <p className="text-gray-900 capitalize">{payment.paymentMethod}</p>
+                        </div>
+                        <div>
+                          <div className="flex items-center space-x-1 text-gray-500 mb-1">
+                            <Clock size={14} />
+                            <span className="font-medium">Validity</span>
+                          </div>
+                          <p className="text-gray-900">{payment.validityTerm} month{payment.validityTerm > 1 ? 's' : ''}</p>
+                        </div>
+                        <div>
+                          <div className="text-gray-500 font-medium mb-1">Start Date</div>
+                          <p className="text-gray-900">{new Date(payment.startDate).toLocaleDateString()}</p>
+                        </div>
+                        <div>
+                          <div className="text-gray-500 font-medium mb-1">Expiry Date</div>
+                          <p className="text-gray-900">{new Date(payment.expiryDate).toLocaleDateString()}</p>
+                        </div>
+                        <div>
+                          <div className="text-gray-500 font-medium mb-1">Vehicle Types</div>
+                          <p className="text-gray-900 capitalize">
+                            {payment.vehicleTypes?.map(v => v.replace('-', ' ')).join(', ') || 'N/A'}
+                          </p>
+                        </div>
+                        <div>
+                          <div className="text-gray-500 font-medium mb-1">Created By</div>
+                          <p className="text-gray-900">
+                            {payment.createdBy?.name || payment.createdBy?.operatorId || 'N/A'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Transaction & Notes */}
+                      <div className="mt-3 pt-3 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm">
+                        <div className="text-gray-500">
+                          {payment.transactionId && (
+                            <span className="mr-4">Txn ID: <span className="text-gray-900">{payment.transactionId}</span></span>
+                          )}
+                          {payment.paymentReference && (
+                            <span>Ref: <span className="text-gray-900">{payment.paymentReference}</span></span>
+                          )}
+                        </div>
+                        <div className="text-gray-400 text-xs">
+                          Created: {new Date(payment.createdAt).toLocaleString()}
+                        </div>
+                      </div>
+
+                      {payment.notes && (
+                        <div className="mt-2 text-sm text-gray-600 bg-gray-50 rounded p-2">
+                          <span className="font-medium">Notes:</span> {payment.notes}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="border-t border-gray-200 p-4 flex items-center justify-between">
+              <p className="text-sm text-gray-500">
+                {membershipPayments.length} payment{membershipPayments.length !== 1 ? 's' : ''} found
+              </p>
+              <div className="flex items-center gap-2">
+                {membershipPayments.length > 0 && (
+                  <button
+                    onClick={copyAllPaymentsToClipboard}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      copiedPaymentId === 'all'
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                    }`}
+                  >
+                    {copiedPaymentId === 'all' ? <CheckCheck size={14} /> : <Copy size={14} />}
+                    {copiedPaymentId === 'all' ? 'Copied!' : 'Copy All'}
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowMembershipModal(false)}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

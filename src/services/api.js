@@ -396,6 +396,18 @@ class ApiService {
     return this.request(`/membership-payments/check-membership/${phoneNumber}`);
   }
 
+  async getMembershipPayments(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.startDate) params.append('startDate', filters.startDate);
+    if (filters.endDate) params.append('endDate', filters.endDate);
+    if (filters.membershipType) params.append('membershipType', filters.membershipType);
+    if (filters.page) params.append('page', filters.page);
+    if (filters.limit) params.append('limit', filters.limit);
+    const queryString = params.toString();
+    const endpoint = queryString ? `/membership-payments?${queryString}` : '/membership-payments';
+    return this.request(endpoint);
+  }
+
   // Site endpoints
   async getSites(filters = {}) {
     const queryParams = new URLSearchParams();
