@@ -433,8 +433,26 @@ const Analytics = () => {
         return matchesSearch && matchesPaymentMethod && matchesDeletedStatus;
       });
 
-      if (exportBookings.length === 0) {
-        setError('No bookings match the current filters');
+      // Paginate every membership payment in the same date window
+      const membershipPayments = [];
+      let mpPage = 1;
+      let mpTotalPages = 1;
+      do {
+        const mpResp = await apiService.getMembershipPayments({
+          startDate: startDateTime,
+          endDate: endDateTime,
+          page: mpPage,
+          limit: pageSize
+        });
+        const mpBatch = mpResp.data?.payments || [];
+        membershipPayments.push(...mpBatch);
+        mpTotalPages = mpResp.data?.pagination?.totalPages || 1;
+        mpPage += 1;
+        if (mpBatch.length === 0) break;
+      } while (mpPage <= mpTotalPages);
+
+      if (exportBookings.length === 0 && membershipPayments.length === 0) {
+        setError('No bookings or membership payments match the current filters');
         return;
       }
 
@@ -448,7 +466,8 @@ const Analytics = () => {
           searchTerm: searchTerm || undefined,
           showDeletedBookings,
           operatorId: isOperator ? currentUser.operatorId : undefined
-        }
+        },
+        membershipPayments
       );
     } catch (error) {
       console.error('Excel export failed:', error);

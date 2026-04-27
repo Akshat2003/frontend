@@ -59,7 +59,16 @@ const triggerDownload = async (workbook, filename) => {
   URL.revokeObjectURL(url);
 };
 
-export const exportBookingsToExcel = async (bookings, siteName, siteId, filters = {}) => {
+const membershipPaymentBucket = (method) =>
+  (method || '').toLowerCase() === 'cash' ? 'Cash' : 'Online';
+
+export const exportBookingsToExcel = async (
+  bookings,
+  siteName,
+  siteId,
+  filters = {},
+  membershipPayments = []
+) => {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Spark Machineries Operator';
   workbook.created = new Date();
@@ -356,6 +365,134 @@ export const exportBookingsToExcel = async (bookings, siteName, siteId, filters 
       row.getCell(3).numFmt = '₹#,##0.00';
       row.getCell(4).numFmt = '₹#,##0.00';
     });
+
+  // Sheet 8: Membership Payments
+  const membershipSheet = workbook.addWorksheet('Membership Payments', {
+    views: [{ state: 'frozen', xSplit: 0, ySplit: 1 }]
+  });
+  membershipSheet.columns = [
+    { header: 'Membership Number', key: 'membershipNumber', width: 18 },
+    { header: 'Customer Name', key: 'customerName', width: 22 },
+    { header: 'Phone Number', key: 'customerPhone', width: 15 },
+    { header: 'Membership Type', key: 'membershipType', width: 16 },
+    { header: 'Amount', key: 'amount', width: 14 },
+    { header: 'Payment Method', key: 'paymentMethod', width: 16 },
+    { header: 'Payment Bucket', key: 'paymentBucket', width: 16 },
+    { header: 'Status', key: 'status', width: 14 },
+    { header: 'Validity (months)', key: 'validityTerm', width: 16 },
+    { header: 'Start Date', key: 'startDate', width: 18 },
+    { header: 'Expiry Date', key: 'expiryDate', width: 18 },
+    { header: 'Vehicle Types', key: 'vehicleTypes', width: 22 },
+    { header: 'Transaction ID', key: 'transactionId', width: 20 },
+    { header: 'Payment Reference', key: 'paymentReference', width: 20 },
+    { header: 'Created By', key: 'createdBy', width: 18 },
+    { header: 'Created At', key: 'createdAt', width: 20 },
+    { header: 'Notes', key: 'notes', width: 30 }
+  ];
+  styleHeaderRow(membershipSheet);
+
+  membershipPayments.forEach((p) => {
+    const row = membershipSheet.addRow({
+      membershipNumber: p.membershipNumber || '',
+      customerName: p.customerName || '',
+      customerPhone: p.customerPhone || '',
+      membershipType: p.membershipType || '',
+      amount: p.amount || 0,
+      paymentMethod: p.paymentMethod || '',
+      paymentBucket: membershipPaymentBucket(p.paymentMethod),
+      status: p.status || '',
+      validityTerm: p.validityTerm || 0,
+      startDate: p.startDate ? new Date(p.startDate) : '',
+      expiryDate: p.expiryDate ? new Date(p.expiryDate) : '',
+      vehicleTypes: (p.vehicleTypes || []).map((v) => v.replace('-', ' ')).join(', '),
+      transactionId: p.transactionId || '',
+      paymentReference: p.paymentReference || '',
+      createdBy: p.createdBy?.name || p.createdBy?.operatorId || '',
+      createdAt: p.createdAt ? new Date(p.createdAt) : '',
+      notes: p.notes || ''
+    });
+    row.getCell(5).numFmt = '₹#,##0.00';
+    [10, 11, 16].forEach((colNum) => {
+      const cell = row.getCell(colNum);
+      if (cell.value) cell.numFmt = 'yyyy-mm-dd hh:mm:ss';
+    });
+  });
+
+  if (membershipPayments.length > 0) {
+    membershipSheet.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: membershipSheet.columns.length }
+    };
+  }
+
+  // Sheet 9: Membership Payment Analysis (Cash vs Online)
+  const membershipAnalysisSheet = workbook.addWorksheet('Membership Payment Analysis');
+  membershipAnalysisSheet.columns = [
+    { header: 'Bucket', key: 'bucket', width: 14 },
+    { header: 'Count', key: 'count', width: 12 },
+    { header: 'Percentage', key: 'percentage', width: 14 },
+    { header: 'Total Amount', key: 'amount', width: 18 }
+  ];
+  styleHeaderRow(membershipAnalysisSheet);
+
+  const totalMembershipCount = membershipPayments.length;
+  const buckets = { Cash: { count: 0, amount: 0 }, Online: { count: 0, amount: 0 } };
+  const methods = {};
+
+  membershipPayments.forEach((p) => {
+    const bucket = membershipPaymentBucket(p.paymentMethod);
+    buckets[bucket].count += 1;
+    buckets[bucket].amount += p.amount || 0;
+
+    const method = p.paymentMethod || 'unknown';
+    if (!methods[method]) methods[method] = { count: 0, amount: 0 };
+    methods[method].count += 1;
+    methods[method].amount += p.amount || 0;
+  });
+
+  ['Cash', 'Online'].forEach((bucket) => {
+    const data = buckets[bucket];
+    const row = membershipAnalysisSheet.addRow({
+      bucket,
+      count: data.count,
+      percentage: totalMembershipCount
+        ? ((data.count / totalMembershipCount) * 100).toFixed(2) + '%'
+        : '0.00%',
+      amount: data.amount
+    });
+    row.getCell(4).numFmt = '₹#,##0.00';
+  });
+
+  const totalRow = membershipAnalysisSheet.addRow({
+    bucket: 'Total',
+    count: totalMembershipCount,
+    percentage: totalMembershipCount ? '100.00%' : '0.00%',
+    amount: buckets.Cash.amount + buckets.Online.amount
+  });
+  totalRow.font = { bold: true };
+  totalRow.getCell(4).numFmt = '₹#,##0.00';
+
+  // Per-method breakdown beneath the bucket totals
+  membershipAnalysisSheet.addRow([]);
+  const breakdownHeader = membershipAnalysisSheet.addRow(['Per-Method Breakdown']);
+  breakdownHeader.font = { bold: true, size: 12 };
+  membershipAnalysisSheet.addRow(['Method', 'Count', 'Percentage', 'Total Amount']);
+  const subHeaderRow = membershipAnalysisSheet.lastRow;
+  subHeaderRow.font = HEADER_FONT;
+  subHeaderRow.fill = HEADER_FILL;
+  subHeaderRow.alignment = { vertical: 'middle', horizontal: 'center' };
+
+  Object.entries(methods).forEach(([method, data]) => {
+    const row = membershipAnalysisSheet.addRow([
+      method,
+      data.count,
+      totalMembershipCount
+        ? ((data.count / totalMembershipCount) * 100).toFixed(2) + '%'
+        : '0.00%',
+      data.amount
+    ]);
+    row.getCell(4).numFmt = '₹#,##0.00';
+  });
 
   const safeSiteName = (siteName || 'Site').replace(/\s+/g, '_');
   const dateStamp = filters.dateRange
