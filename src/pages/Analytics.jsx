@@ -383,17 +383,63 @@ const Analytics = () => {
       return;
     }
 
-    if (filteredBookings.length === 0) {
-      setError('No bookings match the current filters');
-      return;
-    }
-
     setExcelExportLoading(true);
     setError(null);
 
     try {
+      const siteId = currentSite?._id || currentSite?.siteId;
+      const startDateTime = new Date(dateRange.startDate + 'T00:00:00').toISOString();
+      const endDateTime = new Date(dateRange.endDate + 'T23:59:59').toISOString();
+
+      // Paginate through every booking matching the date range + site
+      const pageSize = 500;
+      const allBookings = [];
+      let page = 1;
+      let totalPages = 1;
+      do {
+        const resp = await apiService.getBookings({
+          siteId,
+          dateFrom: startDateTime,
+          dateTo: endDateTime,
+          page,
+          limit: pageSize,
+          sortBy: 'createdAt',
+          sortOrder: 'desc'
+        });
+        const batch = resp.data?.bookings || [];
+        allBookings.push(...batch);
+        totalPages = resp.data?.pagination?.totalPages || 1;
+        page += 1;
+        if (batch.length === 0) break;
+      } while (page <= totalPages);
+
+      // Same client-side filtering used by the on-screen list
+      const isOperator = currentUser && currentUser.role !== 'admin';
+      const term = searchTerm.toLowerCase();
+      const exportBookings = allBookings.filter((booking) => {
+        if (isOperator && booking.operatorId !== currentUser.operatorId) return false;
+        const matchesSearch = !searchTerm || (
+          booking.vehicleNumber?.toLowerCase().includes(term) ||
+          booking.customerName?.toLowerCase().includes(term) ||
+          booking.phoneNumber?.includes(searchTerm) ||
+          booking.machineNumber?.toLowerCase().includes(term)
+        );
+        const matchesPaymentMethod = paymentMethodFilter === 'all' ||
+          booking.payment?.method === paymentMethodFilter ||
+          booking.paymentMethod === paymentMethodFilter;
+        const matchesDeletedStatus = showDeletedBookings
+          ? booking.status === 'deleted'
+          : booking.status !== 'deleted';
+        return matchesSearch && matchesPaymentMethod && matchesDeletedStatus;
+      });
+
+      if (exportBookings.length === 0) {
+        setError('No bookings match the current filters');
+        return;
+      }
+
       await exportBookingsToExcel(
-        filteredBookings,
+        exportBookings,
         currentSite?.siteName || 'Unknown Site',
         currentSite?.siteId || currentSite?._id || 'Unknown',
         {
@@ -401,7 +447,7 @@ const Analytics = () => {
           paymentMethod: paymentMethodFilter,
           searchTerm: searchTerm || undefined,
           showDeletedBookings,
-          operatorId: currentUser && currentUser.role !== 'admin' ? currentUser.operatorId : undefined
+          operatorId: isOperator ? currentUser.operatorId : undefined
         }
       );
     } catch (error) {
