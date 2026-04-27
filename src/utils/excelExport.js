@@ -44,6 +44,21 @@ const totalDurationHrs = (booking) => {
   return d.hours + d.minutes / 60;
 };
 
+// payment.amount stores the gross parking fee even for membership-paid bookings
+// (the membership discount is applied client-side only). For accurate revenue
+// figures we treat the *collected* amount as 0 for membership-paid bookings,
+// and surface the gross fee separately as "membership-discounted value".
+const isMembershipPaid = (booking) =>
+  (booking.payment?.method || booking.paymentMethod || '').toLowerCase() === 'membership';
+
+const grossAmount = (booking) => booking.payment?.amount ?? booking.totalAmount ?? 0;
+
+const collectedAmount = (booking) =>
+  isMembershipPaid(booking) ? 0 : grossAmount(booking);
+
+const membershipDiscountedAmount = (booking) =>
+  isMembershipPaid(booking) ? grossAmount(booking) : 0;
+
 const triggerDownload = async (workbook, filename) => {
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
@@ -92,7 +107,8 @@ export const exportBookingsToExcel = async (
     { header: 'Duration (Hours)', key: 'durationHours', width: 15 },
     { header: 'Duration (Minutes)', key: 'durationMinutes', width: 15 },
     { header: 'Total Duration (Hrs)', key: 'totalDuration', width: 18 },
-    { header: 'Hourly Booking Amount', key: 'paymentAmount', width: 18 },
+    { header: 'Hourly Booking Amount (Gross)', key: 'paymentAmount', width: 24 },
+    { header: 'Hourly Revenue Collected', key: 'collectedRevenue', width: 22 },
     { header: 'Payment Status', key: 'paymentStatus', width: 15 },
     { header: 'Payment Method', key: 'paymentMethod', width: 15 },
     { header: 'Hourly Base Rate', key: 'baseRate', width: 16 },
@@ -127,7 +143,8 @@ export const exportBookingsToExcel = async (
       durationHours: dur.hours,
       durationMinutes: dur.minutes,
       totalDuration: Number(totalDurationHrs(booking).toFixed(2)),
-      paymentAmount: booking.payment?.amount ?? booking.totalAmount ?? 0,
+      paymentAmount: grossAmount(booking),
+      collectedRevenue: collectedAmount(booking),
       paymentStatus: booking.payment?.status || '',
       paymentMethod: booking.payment?.method || booking.paymentMethod || '',
       baseRate: booking.payment?.baseRate || 0,
@@ -140,12 +157,12 @@ export const exportBookingsToExcel = async (
       specialInstructions: booking.specialInstructions || ''
     });
 
-    [9, 10, 21, 22].forEach((colNum) => {
+    [9, 10, 22, 23].forEach((colNum) => {
       const cell = row.getCell(colNum);
       if (cell.value) cell.numFmt = 'yyyy-mm-dd hh:mm:ss';
     });
 
-    [14, 17, 18, 19, 20].forEach((colNum) => {
+    [14, 15, 18, 19, 20, 21].forEach((colNum) => {
       row.getCell(colNum).numFmt = '₹#,##0.00';
     });
 
@@ -171,11 +188,18 @@ export const exportBookingsToExcel = async (
     (b) => b.status === 'cancelled' || b.status === 'deleted'
   ).length;
 
-  const amountOf = (b) => b.payment?.amount ?? b.totalAmount ?? 0;
-  const totalRevenue = bookings.reduce((sum, b) => sum + amountOf(b), 0);
+  const totalRevenue = bookings.reduce((sum, b) => sum + collectedAmount(b), 0);
   const completedRevenue = bookings
     .filter((b) => b.status === 'completed')
-    .reduce((sum, b) => sum + amountOf(b), 0);
+    .reduce((sum, b) => sum + collectedAmount(b), 0);
+  const membershipPaidCount = bookings.filter(isMembershipPaid).length;
+  const membershipDiscountedTotal = bookings.reduce(
+    (sum, b) => sum + membershipDiscountedAmount(b),
+    0
+  );
+  const membershipDiscountedCompleted = bookings
+    .filter((b) => b.status === 'completed')
+    .reduce((sum, b) => sum + membershipDiscountedAmount(b), 0);
 
   const withDuration = bookings.filter(
     (b) => (b.duration && (b.duration.hours || b.duration.minutes)) || (b.startTime && b.endTime)
@@ -209,11 +233,32 @@ export const exportBookingsToExcel = async (
   summarySheet.addRow(['Cancelled/Deleted Hourly Bookings', cancelledBookings]);
   summarySheet.addRow([]);
 
-  summarySheet.addRow(['HOURLY REVENUE STATISTICS (Bookings only)']).font = { bold: true, size: 14 };
+  summarySheet.addRow(['HOURLY REVENUE STATISTICS (Bookings only — collected money)']).font = { bold: true, size: 14 };
   summarySheet.addRow([]);
-  summarySheet.addRow(['Total Hourly Revenue', totalRevenue]).getCell(2).numFmt = '₹#,##0.00';
-  summarySheet.addRow(['Hourly Revenue from Completed Bookings', completedRevenue]).getCell(2).numFmt = '₹#,##0.00';
-  summarySheet.addRow(['Average Hourly Revenue per Booking', avgRevenue]).getCell(2).numFmt = '₹#,##0.00';
+  summarySheet.addRow(['Total Hourly Revenue Collected', totalRevenue]).getCell(2).numFmt = '₹#,##0.00';
+  summarySheet.addRow(['  (excludes membership-paid bookings — they collected ₹0 since members park free)']);
+  summarySheet.addRow(['Hourly Revenue Collected (Completed bookings only)', completedRevenue]).getCell(2).numFmt = '₹#,##0.00';
+  summarySheet.addRow(['Average Collected Revenue per Booking', avgRevenue]).getCell(2).numFmt = '₹#,##0.00';
+  summarySheet.addRow([]);
+
+  summarySheet.addRow(['MEMBERSHIP-DISCOUNTED PARKING (Foregone hourly revenue)']).font = { bold: true, size: 14 };
+  summarySheet.addRow([]);
+  summarySheet.addRow(['Bookings paid via membership', membershipPaidCount]);
+  summarySheet
+    .addRow([
+      'Foregone hourly revenue (membership discount value)',
+      membershipDiscountedTotal
+    ])
+    .getCell(2).numFmt = '₹#,##0.00';
+  summarySheet
+    .addRow([
+      'Foregone hourly revenue — completed only',
+      membershipDiscountedCompleted
+    ])
+    .getCell(2).numFmt = '₹#,##0.00';
+  summarySheet.addRow([
+    '  (this is what the parking would have cost if the member had paid hourly — no money was actually collected)'
+  ]);
   summarySheet.addRow([]);
 
   summarySheet.addRow(['DURATION STATISTICS (Hourly Bookings)']).font = { bold: true, size: 14 };
@@ -237,12 +282,15 @@ export const exportBookingsToExcel = async (
   summarySheet.addRow(['Membership Revenue (Completed only)', membershipCompletedRevenue]).getCell(2).numFmt = '₹#,##0.00';
   summarySheet.addRow([]);
 
-  summarySheet.addRow(['COMBINED REVENUE (Hourly + Membership)']).font = { bold: true, size: 14 };
+  summarySheet.addRow(['COMBINED REVENUE (Collected hourly + Membership purchases)']).font = { bold: true, size: 14 };
   summarySheet.addRow([]);
   summarySheet.addRow(['Combined Total Revenue', totalRevenue + membershipRevenue]).getCell(2).numFmt = '₹#,##0.00';
   summarySheet
     .addRow(['Combined Revenue (Completed only)', completedRevenue + membershipCompletedRevenue])
     .getCell(2).numFmt = '₹#,##0.00';
+  summarySheet.addRow([
+    '  (this is real money collected — foregone membership-discount value is NOT added in)'
+  ]);
 
   // Sheet 3: Status Breakdown (hourly bookings only)
   const statusSheet = workbook.addWorksheet('Status Breakdown (Hourly)');
@@ -250,7 +298,7 @@ export const exportBookingsToExcel = async (
     { header: 'Booking Status', key: 'status', width: 20 },
     { header: 'Booking Count', key: 'count', width: 15 },
     { header: 'Percentage', key: 'percentage', width: 15 },
-    { header: 'Hourly Revenue', key: 'revenue', width: 20 }
+    { header: 'Hourly Revenue Collected', key: 'revenue', width: 24 }
   ];
   styleHeaderRow(statusSheet);
 
@@ -259,7 +307,7 @@ export const exportBookingsToExcel = async (
     const s = b.status || 'unknown';
     if (!statusCounts[s]) statusCounts[s] = { count: 0, revenue: 0 };
     statusCounts[s].count += 1;
-    statusCounts[s].revenue += amountOf(b);
+    statusCounts[s].revenue += collectedAmount(b);
   });
   Object.entries(statusCounts).forEach(([status, data]) => {
     const row = statusSheet.addRow({
@@ -277,7 +325,7 @@ export const exportBookingsToExcel = async (
     { header: 'Vehicle Type', key: 'vehicleType', width: 20 },
     { header: 'Booking Count', key: 'count', width: 15 },
     { header: 'Percentage', key: 'percentage', width: 15 },
-    { header: 'Hourly Revenue', key: 'revenue', width: 20 },
+    { header: 'Hourly Revenue Collected', key: 'revenue', width: 24 },
     { header: 'Avg Booking Duration (Hrs)', key: 'avgDuration', width: 24 }
   ];
   styleHeaderRow(vehicleSheet);
@@ -287,7 +335,7 @@ export const exportBookingsToExcel = async (
     const t = b.vehicleType || 'unknown';
     if (!vehicleCounts[t]) vehicleCounts[t] = { count: 0, revenue: 0, totalDuration: 0 };
     vehicleCounts[t].count += 1;
-    vehicleCounts[t].revenue += amountOf(b);
+    vehicleCounts[t].revenue += collectedAmount(b);
     vehicleCounts[t].totalDuration += totalDurationHrs(b);
   });
   Object.entries(vehicleCounts).forEach(([type, data]) => {
@@ -306,7 +354,7 @@ export const exportBookingsToExcel = async (
   machineSheet.columns = [
     { header: 'Machine Number', key: 'machineNumber', width: 20 },
     { header: 'Booking Count', key: 'count', width: 15 },
-    { header: 'Hourly Revenue', key: 'revenue', width: 20 },
+    { header: 'Hourly Revenue Collected', key: 'revenue', width: 24 },
     { header: 'Total Hours Booked', key: 'totalHours', width: 20 }
   ];
   styleHeaderRow(machineSheet);
@@ -316,7 +364,7 @@ export const exportBookingsToExcel = async (
     const m = b.machineNumber || 'unknown';
     if (!machineCounts[m]) machineCounts[m] = { count: 0, revenue: 0, totalHours: 0 };
     machineCounts[m].count += 1;
-    machineCounts[m].revenue += amountOf(b);
+    machineCounts[m].revenue += collectedAmount(b);
     machineCounts[m].totalHours += totalDurationHrs(b);
   });
   Object.entries(machineCounts)
@@ -332,12 +380,15 @@ export const exportBookingsToExcel = async (
     });
 
   // Sheet 6: Payment Method Analysis (hourly bookings only)
+  // For non-membership rows, "Amount" = revenue actually collected.
+  // For the "membership" row, "Amount" = the foregone parking fee (the
+  // discount the member received), since no money was actually collected.
   const paymentSheet = workbook.addWorksheet('Payment Method (Hourly)');
   paymentSheet.columns = [
     { header: 'Payment Method', key: 'method', width: 20 },
     { header: 'Booking Count', key: 'count', width: 15 },
     { header: 'Percentage', key: 'percentage', width: 15 },
-    { header: 'Total Hourly Amount', key: 'amount', width: 22 }
+    { header: 'Amount (Collected, or Discounted Value for membership)', key: 'amount', width: 50 }
   ];
   styleHeaderRow(paymentSheet);
 
@@ -346,7 +397,7 @@ export const exportBookingsToExcel = async (
     const m = b.payment?.method || b.paymentMethod || 'unknown';
     if (!paymentMethods[m]) paymentMethods[m] = { count: 0, amount: 0 };
     paymentMethods[m].count += 1;
-    paymentMethods[m].amount += amountOf(b);
+    paymentMethods[m].amount += grossAmount(b);
   });
   Object.entries(paymentMethods).forEach(([method, data]) => {
     const row = paymentSheet.addRow({
@@ -363,8 +414,8 @@ export const exportBookingsToExcel = async (
   monthlySheet.columns = [
     { header: 'Month', key: 'month', width: 20 },
     { header: 'Hourly Bookings', key: 'count', width: 18 },
-    { header: 'Hourly Revenue', key: 'revenue', width: 20 },
-    { header: 'Avg Hourly Revenue per Booking', key: 'avgRevenue', width: 28 }
+    { header: 'Hourly Revenue Collected', key: 'revenue', width: 24 },
+    { header: 'Avg Collected Revenue per Booking', key: 'avgRevenue', width: 30 }
   ];
   styleHeaderRow(monthlySheet);
 
@@ -375,7 +426,7 @@ export const exportBookingsToExcel = async (
     const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
     if (!monthlyData[monthKey]) monthlyData[monthKey] = { count: 0, revenue: 0 };
     monthlyData[monthKey].count += 1;
-    monthlyData[monthKey].revenue += amountOf(b);
+    monthlyData[monthKey].revenue += collectedAmount(b);
   });
   Object.entries(monthlyData)
     .sort((a, b) => a[0].localeCompare(b[0]))
