@@ -16,8 +16,10 @@ import Button from '../Common/Button';
 import Input from '../Common/Input';
 import Select from '../Common/Select';
 import apiService from '../../services/api';
+import { useSite } from '../../contexts/SiteContext';
 
 const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
+  const { currentSite } = useSite();
   const [isCreating, setIsCreating] = useState(false);
   const [membershipData, setMembershipData] = useState({
     membershipType: 'yearly',
@@ -104,7 +106,8 @@ const MembershipModal = ({ customer, isOpen, onClose, onMembershipUpdate }) => {
       // Create membership using new customer-level API
       const response = await apiService.createMembership(customer._id, {
         ...membershipData,
-        paymentDetails: { amount }
+        paymentDetails: { amount },
+        siteId: currentSite?._id || currentSite?.siteId
       });
       
       // Show the created credentials

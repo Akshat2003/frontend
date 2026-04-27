@@ -256,7 +256,8 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
       const membershipData = {
         membershipType: 'monthly',
         validityTerm: 1, // 1 month
-        vehicleTypes: [booking.vehicleType] // Array with current vehicle type
+        vehicleTypes: [booking.vehicleType], // Array with current vehicle type
+        siteId: currentSite?._id || currentSite?.siteId
       };
 
       // Call the API to create/extend membership

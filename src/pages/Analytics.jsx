@@ -109,8 +109,9 @@ const Analytics = () => {
     try {
       const startDateTime = new Date(dateRange.startDate + 'T00:00:00').toISOString();
       const endDateTime = new Date(dateRange.endDate + 'T23:59:59').toISOString();
-      
-      const revenueResponse = await apiService.getMembershipRevenue(startDateTime, endDateTime);
+      const siteId = currentSite?._id || currentSite?.siteId;
+
+      const revenueResponse = await apiService.getMembershipRevenue(startDateTime, endDateTime, siteId);
       if (revenueResponse.success) {
         revenue = revenueResponse.data.totalRevenue || 0;
       }
@@ -260,9 +261,11 @@ const Analytics = () => {
     try {
       const startDateTime = new Date(dateRange.startDate + 'T00:00:00').toISOString();
       const endDateTime = new Date(dateRange.endDate + 'T23:59:59').toISOString();
+      const siteId = currentSite?._id || currentSite?.siteId;
       const response = await apiService.getMembershipPayments({
         startDate: startDateTime,
         endDate: endDateTime,
+        siteId,
         limit: 100
       });
       setMembershipPayments(response.data?.payments || []);
@@ -441,6 +444,7 @@ const Analytics = () => {
         const mpResp = await apiService.getMembershipPayments({
           startDate: startDateTime,
           endDate: endDateTime,
+          siteId,
           page: mpPage,
           limit: pageSize
         });

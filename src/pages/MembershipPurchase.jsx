@@ -5,8 +5,10 @@ import Input from '../components/Common/Input';
 import Select from '../components/Common/Select';
 import { formatCurrency } from '../utils/calculations';
 import apiService from '../services/api';
+import { useSite } from '../contexts/SiteContext';
 
 const MembershipPurchase = () => {
+  const { currentSite } = useSite();
   const [currentPage, setCurrentPage] = useState('customer-details');
   const [customerData, setCustomerData] = useState({
     phoneNumber: '',
@@ -180,6 +182,7 @@ const MembershipPurchase = () => {
         membershipType: 'monthly',
         validityTerm: 1, // 1 month
         vehicleTypes: vehicleTypesToAdd, // Array with all vehicle types
+        siteId: currentSite?._id || currentSite?.siteId,
         paymentDetails: {
           amount: membershipPrice,
           method: paymentMethod,

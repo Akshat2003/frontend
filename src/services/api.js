@@ -383,10 +383,11 @@ class ApiService {
 
 
   // Membership Payment endpoints
-  async getMembershipRevenue(startDate, endDate) {
+  async getMembershipRevenue(startDate, endDate, siteId) {
     const params = new URLSearchParams();
     if (startDate) params.append('startDate', startDate);
     if (endDate) params.append('endDate', endDate);
+    if (siteId) params.append('siteId', siteId);
     const queryString = params.toString();
     const endpoint = queryString ? `/membership-payments/revenue?${queryString}` : '/membership-payments/revenue';
     return this.request(endpoint);
@@ -403,6 +404,7 @@ class ApiService {
     if (filters.membershipType) params.append('membershipType', filters.membershipType);
     if (filters.page) params.append('page', filters.page);
     if (filters.limit) params.append('limit', filters.limit);
+    if (filters.siteId) params.append('siteId', filters.siteId);
     const queryString = params.toString();
     const endpoint = queryString ? `/membership-payments?${queryString}` : '/membership-payments';
     return this.request(endpoint);

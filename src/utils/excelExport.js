@@ -92,13 +92,13 @@ export const exportBookingsToExcel = async (
     { header: 'Duration (Hours)', key: 'durationHours', width: 15 },
     { header: 'Duration (Minutes)', key: 'durationMinutes', width: 15 },
     { header: 'Total Duration (Hrs)', key: 'totalDuration', width: 18 },
-    { header: 'Payment Amount', key: 'paymentAmount', width: 15 },
+    { header: 'Hourly Booking Amount', key: 'paymentAmount', width: 18 },
     { header: 'Payment Status', key: 'paymentStatus', width: 15 },
     { header: 'Payment Method', key: 'paymentMethod', width: 15 },
-    { header: 'Base Rate', key: 'baseRate', width: 12 },
-    { header: 'Additional Charges', key: 'additionalCharges', width: 18 },
-    { header: 'Discount', key: 'discount', width: 12 },
-    { header: 'Tax', key: 'tax', width: 10 },
+    { header: 'Hourly Base Rate', key: 'baseRate', width: 16 },
+    { header: 'Additional Charges (Booking)', key: 'additionalCharges', width: 22 },
+    { header: 'Discount (Booking)', key: 'discount', width: 16 },
+    { header: 'Tax (Booking)', key: 'tax', width: 14 },
     { header: 'Paid At', key: 'paidAt', width: 20 },
     { header: 'Created At', key: 'createdAt', width: 20 },
     { header: 'Notes', key: 'notes', width: 30 },
@@ -201,32 +201,56 @@ export const exportBookingsToExcel = async (
   summarySheet.addRow(['Generated At', new Date()]).getCell(2).numFmt = 'yyyy-mm-dd hh:mm:ss';
   summarySheet.addRow([]);
 
-  summarySheet.addRow(['BOOKING STATISTICS']).font = { bold: true, size: 14 };
+  summarySheet.addRow(['HOURLY BOOKING STATISTICS']).font = { bold: true, size: 14 };
   summarySheet.addRow([]);
-  summarySheet.addRow(['Total Bookings', totalBookings]);
-  summarySheet.addRow(['Completed Bookings', completedBookings]);
-  summarySheet.addRow(['Active Bookings', activeBookings]);
-  summarySheet.addRow(['Cancelled/Deleted Bookings', cancelledBookings]);
-  summarySheet.addRow([]);
-
-  summarySheet.addRow(['REVENUE STATISTICS']).font = { bold: true, size: 14 };
-  summarySheet.addRow([]);
-  summarySheet.addRow(['Total Revenue', totalRevenue]).getCell(2).numFmt = '₹#,##0.00';
-  summarySheet.addRow(['Revenue from Completed Bookings', completedRevenue]).getCell(2).numFmt = '₹#,##0.00';
-  summarySheet.addRow(['Average Revenue per Booking', avgRevenue]).getCell(2).numFmt = '₹#,##0.00';
+  summarySheet.addRow(['Total Hourly Bookings', totalBookings]);
+  summarySheet.addRow(['Completed Hourly Bookings', completedBookings]);
+  summarySheet.addRow(['Active Hourly Bookings', activeBookings]);
+  summarySheet.addRow(['Cancelled/Deleted Hourly Bookings', cancelledBookings]);
   summarySheet.addRow([]);
 
-  summarySheet.addRow(['DURATION STATISTICS']).font = { bold: true, size: 14 };
+  summarySheet.addRow(['HOURLY REVENUE STATISTICS (Bookings only)']).font = { bold: true, size: 14 };
   summarySheet.addRow([]);
-  summarySheet.addRow(['Average Duration (Hours)', Number(avgDuration.toFixed(2))]);
+  summarySheet.addRow(['Total Hourly Revenue', totalRevenue]).getCell(2).numFmt = '₹#,##0.00';
+  summarySheet.addRow(['Hourly Revenue from Completed Bookings', completedRevenue]).getCell(2).numFmt = '₹#,##0.00';
+  summarySheet.addRow(['Average Hourly Revenue per Booking', avgRevenue]).getCell(2).numFmt = '₹#,##0.00';
+  summarySheet.addRow([]);
 
-  // Sheet 3: Status Breakdown
-  const statusSheet = workbook.addWorksheet('Status Breakdown');
+  summarySheet.addRow(['DURATION STATISTICS (Hourly Bookings)']).font = { bold: true, size: 14 };
+  summarySheet.addRow([]);
+  summarySheet.addRow(['Average Booking Duration (Hours)', Number(avgDuration.toFixed(2))]);
+  summarySheet.addRow([]);
+
+  // Membership totals
+  const membershipCount = membershipPayments.length;
+  const membershipCompletedCount = membershipPayments.filter((p) => p.status === 'completed').length;
+  const membershipRevenue = membershipPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+  const membershipCompletedRevenue = membershipPayments
+    .filter((p) => p.status === 'completed')
+    .reduce((sum, p) => sum + (p.amount || 0), 0);
+
+  summarySheet.addRow(['MEMBERSHIP PURCHASE STATISTICS (Memberships only)']).font = { bold: true, size: 14 };
+  summarySheet.addRow([]);
+  summarySheet.addRow(['Total Membership Purchases', membershipCount]);
+  summarySheet.addRow(['Completed Membership Purchases', membershipCompletedCount]);
+  summarySheet.addRow(['Total Membership Revenue', membershipRevenue]).getCell(2).numFmt = '₹#,##0.00';
+  summarySheet.addRow(['Membership Revenue (Completed only)', membershipCompletedRevenue]).getCell(2).numFmt = '₹#,##0.00';
+  summarySheet.addRow([]);
+
+  summarySheet.addRow(['COMBINED REVENUE (Hourly + Membership)']).font = { bold: true, size: 14 };
+  summarySheet.addRow([]);
+  summarySheet.addRow(['Combined Total Revenue', totalRevenue + membershipRevenue]).getCell(2).numFmt = '₹#,##0.00';
+  summarySheet
+    .addRow(['Combined Revenue (Completed only)', completedRevenue + membershipCompletedRevenue])
+    .getCell(2).numFmt = '₹#,##0.00';
+
+  // Sheet 3: Status Breakdown (hourly bookings only)
+  const statusSheet = workbook.addWorksheet('Status Breakdown (Hourly)');
   statusSheet.columns = [
-    { header: 'Status', key: 'status', width: 20 },
-    { header: 'Count', key: 'count', width: 15 },
+    { header: 'Booking Status', key: 'status', width: 20 },
+    { header: 'Booking Count', key: 'count', width: 15 },
     { header: 'Percentage', key: 'percentage', width: 15 },
-    { header: 'Total Revenue', key: 'revenue', width: 20 }
+    { header: 'Hourly Revenue', key: 'revenue', width: 20 }
   ];
   styleHeaderRow(statusSheet);
 
@@ -247,14 +271,14 @@ export const exportBookingsToExcel = async (
     row.getCell(4).numFmt = '₹#,##0.00';
   });
 
-  // Sheet 4: Vehicle Type Analysis
-  const vehicleSheet = workbook.addWorksheet('Vehicle Type Analysis');
+  // Sheet 4: Vehicle Type Analysis (hourly bookings only)
+  const vehicleSheet = workbook.addWorksheet('Vehicle Type Analysis (Hourly)');
   vehicleSheet.columns = [
     { header: 'Vehicle Type', key: 'vehicleType', width: 20 },
-    { header: 'Count', key: 'count', width: 15 },
+    { header: 'Booking Count', key: 'count', width: 15 },
     { header: 'Percentage', key: 'percentage', width: 15 },
-    { header: 'Total Revenue', key: 'revenue', width: 20 },
-    { header: 'Avg Duration (Hrs)', key: 'avgDuration', width: 20 }
+    { header: 'Hourly Revenue', key: 'revenue', width: 20 },
+    { header: 'Avg Booking Duration (Hrs)', key: 'avgDuration', width: 24 }
   ];
   styleHeaderRow(vehicleSheet);
 
@@ -277,13 +301,13 @@ export const exportBookingsToExcel = async (
     row.getCell(4).numFmt = '₹#,##0.00';
   });
 
-  // Sheet 5: Machine Usage Analysis
-  const machineSheet = workbook.addWorksheet('Machine Usage Analysis');
+  // Sheet 5: Machine Usage Analysis (hourly bookings only)
+  const machineSheet = workbook.addWorksheet('Machine Usage (Hourly)');
   machineSheet.columns = [
     { header: 'Machine Number', key: 'machineNumber', width: 20 },
-    { header: 'Usage Count', key: 'count', width: 15 },
-    { header: 'Total Revenue', key: 'revenue', width: 20 },
-    { header: 'Total Hours Used', key: 'totalHours', width: 20 }
+    { header: 'Booking Count', key: 'count', width: 15 },
+    { header: 'Hourly Revenue', key: 'revenue', width: 20 },
+    { header: 'Total Hours Booked', key: 'totalHours', width: 20 }
   ];
   styleHeaderRow(machineSheet);
 
@@ -307,13 +331,13 @@ export const exportBookingsToExcel = async (
       row.getCell(3).numFmt = '₹#,##0.00';
     });
 
-  // Sheet 6: Payment Method Analysis
-  const paymentSheet = workbook.addWorksheet('Payment Method Analysis');
+  // Sheet 6: Payment Method Analysis (hourly bookings only)
+  const paymentSheet = workbook.addWorksheet('Payment Method (Hourly)');
   paymentSheet.columns = [
     { header: 'Payment Method', key: 'method', width: 20 },
-    { header: 'Count', key: 'count', width: 15 },
+    { header: 'Booking Count', key: 'count', width: 15 },
     { header: 'Percentage', key: 'percentage', width: 15 },
-    { header: 'Total Amount', key: 'amount', width: 20 }
+    { header: 'Total Hourly Amount', key: 'amount', width: 22 }
   ];
   styleHeaderRow(paymentSheet);
 
@@ -334,13 +358,13 @@ export const exportBookingsToExcel = async (
     row.getCell(4).numFmt = '₹#,##0.00';
   });
 
-  // Sheet 7: Monthly Trend
-  const monthlySheet = workbook.addWorksheet('Monthly Trend');
+  // Sheet 7: Monthly Trend (hourly bookings only)
+  const monthlySheet = workbook.addWorksheet('Monthly Trend (Hourly)');
   monthlySheet.columns = [
     { header: 'Month', key: 'month', width: 20 },
-    { header: 'Bookings', key: 'count', width: 15 },
-    { header: 'Revenue', key: 'revenue', width: 20 },
-    { header: 'Avg Revenue', key: 'avgRevenue', width: 20 }
+    { header: 'Hourly Bookings', key: 'count', width: 18 },
+    { header: 'Hourly Revenue', key: 'revenue', width: 20 },
+    { header: 'Avg Hourly Revenue per Booking', key: 'avgRevenue', width: 28 }
   ];
   styleHeaderRow(monthlySheet);
 
@@ -366,7 +390,7 @@ export const exportBookingsToExcel = async (
       row.getCell(4).numFmt = '₹#,##0.00';
     });
 
-  // Sheet 8: Membership Payments
+  // Sheet 8: Membership Payments (membership purchases only)
   const membershipSheet = workbook.addWorksheet('Membership Payments', {
     views: [{ state: 'frozen', xSplit: 0, ySplit: 1 }]
   });
@@ -375,7 +399,7 @@ export const exportBookingsToExcel = async (
     { header: 'Customer Name', key: 'customerName', width: 22 },
     { header: 'Phone Number', key: 'customerPhone', width: 15 },
     { header: 'Membership Type', key: 'membershipType', width: 16 },
-    { header: 'Amount', key: 'amount', width: 14 },
+    { header: 'Membership Purchase Amount', key: 'amount', width: 24 },
     { header: 'Payment Method', key: 'paymentMethod', width: 16 },
     { header: 'Payment Bucket', key: 'paymentBucket', width: 16 },
     { header: 'Status', key: 'status', width: 14 },
@@ -425,13 +449,13 @@ export const exportBookingsToExcel = async (
     };
   }
 
-  // Sheet 9: Membership Payment Analysis (Cash vs Online)
+  // Sheet 9: Membership Payment Analysis (Cash vs Online — membership purchases only)
   const membershipAnalysisSheet = workbook.addWorksheet('Membership Payment Analysis');
   membershipAnalysisSheet.columns = [
-    { header: 'Bucket', key: 'bucket', width: 14 },
-    { header: 'Count', key: 'count', width: 12 },
+    { header: 'Membership Payment Bucket', key: 'bucket', width: 24 },
+    { header: 'Purchase Count', key: 'count', width: 16 },
     { header: 'Percentage', key: 'percentage', width: 14 },
-    { header: 'Total Amount', key: 'amount', width: 18 }
+    { header: 'Total Membership Amount', key: 'amount', width: 24 }
   ];
   styleHeaderRow(membershipAnalysisSheet);
 
@@ -474,9 +498,9 @@ export const exportBookingsToExcel = async (
 
   // Per-method breakdown beneath the bucket totals
   membershipAnalysisSheet.addRow([]);
-  const breakdownHeader = membershipAnalysisSheet.addRow(['Per-Method Breakdown']);
+  const breakdownHeader = membershipAnalysisSheet.addRow(['Per-Method Breakdown (Membership Purchases)']);
   breakdownHeader.font = { bold: true, size: 12 };
-  membershipAnalysisSheet.addRow(['Method', 'Count', 'Percentage', 'Total Amount']);
+  membershipAnalysisSheet.addRow(['Payment Method', 'Purchase Count', 'Percentage', 'Total Membership Amount']);
   const subHeaderRow = membershipAnalysisSheet.lastRow;
   subHeaderRow.font = HEADER_FONT;
   subHeaderRow.fill = HEADER_FILL;
