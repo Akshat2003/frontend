@@ -48,6 +48,11 @@ const Analytics = () => {
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState({
+    fetched: 0,
+    total: null,
+    phase: 'idle' // 'idle' | 'connecting' | 'bookings' | 'memberships'
+  });
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [exportLoading, setExportLoading] = useState(false);
@@ -146,6 +151,7 @@ const Analytics = () => {
 
   const fetchAnalyticsData = async () => {
     setLoading(true);
+    setLoadingProgress({ fetched: 0, total: null, phase: 'connecting' });
     setError(null);
 
     try {
@@ -173,6 +179,8 @@ const Analytics = () => {
           const batch = resp.data?.bookings || [];
           all.push(...batch);
           totalPages = resp.data?.pagination?.totalPages || 1;
+          const totalItems = resp.data?.pagination?.totalItems ?? all.length;
+          setLoadingProgress({ fetched: all.length, total: totalItems, phase: 'bookings' });
           page += 1;
           if (batch.length === 0) break;
         } while (page <= totalPages);
@@ -214,6 +222,7 @@ const Analytics = () => {
       setBookings(operatorFilteredBookings);
 
       // Membership analytics still come from a separate API
+      setLoadingProgress((prev) => ({ ...prev, phase: 'memberships' }));
       const membershipAnalytics = await calculateMembershipAnalytics();
       setAnalytics((prev) => ({
         ...prev,
@@ -226,6 +235,7 @@ const Analytics = () => {
       setError(error.message || 'Failed to load analytics data');
     } finally {
       setLoading(false);
+      setLoadingProgress({ fetched: 0, total: null, phase: 'idle' });
     }
   };
 
@@ -643,6 +653,49 @@ const Analytics = () => {
         </div>
       </div>
 
+      {/* Progress loader during initial fetch */}
+      {loading && (() => {
+        const { fetched, total, phase } = loadingProgress;
+        let pct;
+        let label;
+        if (phase === 'connecting') {
+          pct = 5;
+          label = 'Connecting to server...';
+        } else if (phase === 'bookings') {
+          if (total && total > 0) {
+            pct = Math.min(95, 5 + (fetched / total) * 90);
+            label = `${fetched.toLocaleString()} of ${total.toLocaleString()} bookings loaded`;
+          } else {
+            pct = 10;
+            label = 'Loading bookings...';
+          }
+        } else if (phase === 'memberships') {
+          pct = 95;
+          label = 'Loading membership data...';
+        } else {
+          pct = 100;
+          label = 'Finalizing...';
+        }
+        return (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 md:p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center space-x-2">
+                <RefreshCw className="text-purple-600 animate-spin" size={16} />
+                <span className="text-sm font-medium text-gray-700">Loading analytics...</span>
+              </div>
+              <span className="text-sm font-medium text-gray-700">{Math.round(pct)}%</span>
+            </div>
+            <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-purple-600 transition-all duration-300 ease-out"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <p className="text-xs text-gray-500 mt-2">{label}</p>
+          </div>
+        );
+      })()}
+
       {/* Quick Insights - 2x3 Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 md:p-4">
@@ -652,7 +705,9 @@ const Analytics = () => {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-xs md:text-sm text-gray-600">Total Bookings</p>
-              <p className="text-lg md:text-xl font-bold text-gray-900">{analytics.totalBookings}</p>
+              <p className="text-lg md:text-xl font-bold text-gray-900">
+                {loading ? <RefreshCw className="animate-spin text-gray-400" size={18} /> : analytics.totalBookings}
+              </p>
             </div>
           </div>
         </div>
@@ -665,7 +720,7 @@ const Analytics = () => {
             <div className="min-w-0 flex-1">
               <p className="text-xs md:text-sm text-gray-600">Total Revenue</p>
               <p className="text-sm md:text-lg font-bold text-gray-900 break-words">
-                {formatCurrency(analytics.totalRevenue)}
+                {loading ? <RefreshCw className="animate-spin text-gray-400" size={18} /> : formatCurrency(analytics.totalRevenue)}
               </p>
             </div>
           </div>
@@ -678,7 +733,9 @@ const Analytics = () => {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-xs md:text-sm text-gray-600">Active Bookings</p>
-              <p className="text-lg md:text-xl font-bold text-gray-900">{analytics.activeBookings}</p>
+              <p className="text-lg md:text-xl font-bold text-gray-900">
+                {loading ? <RefreshCw className="animate-spin text-gray-400" size={18} /> : analytics.activeBookings}
+              </p>
             </div>
           </div>
         </div>
@@ -690,7 +747,9 @@ const Analytics = () => {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-xs md:text-sm text-gray-600">Completed Bookings</p>
-              <p className="text-lg md:text-xl font-bold text-gray-900">{analytics.completedBookings}</p>
+              <p className="text-lg md:text-xl font-bold text-gray-900">
+                {loading ? <RefreshCw className="animate-spin text-gray-400" size={18} /> : analytics.completedBookings}
+              </p>
             </div>
           </div>
         </div>
@@ -702,14 +761,18 @@ const Analytics = () => {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-xs md:text-sm text-gray-600">Total Active Memberships</p>
-              <p className="text-lg md:text-xl font-bold text-gray-900">{analytics.membershipSales}</p>
+              <p className="text-lg md:text-xl font-bold text-gray-900">
+                {loading ? <RefreshCw className="animate-spin text-gray-400" size={18} /> : analytics.membershipSales}
+              </p>
             </div>
           </div>
         </div>
 
         <div
-          className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 md:p-4 cursor-pointer hover:shadow-md hover:border-indigo-200 transition-all"
-          onClick={handleMembershipRevenueClick}
+          className={`bg-white rounded-lg shadow-sm border border-gray-100 p-3 md:p-4 transition-all ${
+            loading ? '' : 'cursor-pointer hover:shadow-md hover:border-indigo-200'
+          }`}
+          onClick={loading ? undefined : handleMembershipRevenueClick}
         >
           <div className="flex items-center space-x-2 md:space-x-3">
             <div className="bg-indigo-100 p-2 rounded-lg flex-shrink-0">
@@ -718,9 +781,9 @@ const Analytics = () => {
             <div className="min-w-0 flex-1">
               <p className="text-xs md:text-sm text-gray-600">Membership Revenue</p>
               <p className="text-sm md:text-lg font-bold text-gray-900 break-words">
-                {formatCurrency(analytics.membershipRevenue)}
+                {loading ? <RefreshCw className="animate-spin text-gray-400" size={18} /> : formatCurrency(analytics.membershipRevenue)}
               </p>
-              <p className="text-xs text-indigo-500 mt-1">Click for details</p>
+              {!loading && <p className="text-xs text-indigo-500 mt-1">Click for details</p>}
             </div>
           </div>
         </div>
