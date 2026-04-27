@@ -74,12 +74,14 @@ const Analytics = () => {
 
   const currentUser = getCurrentUser();
 
-  // Fetch analytics data when date range or site changes
+  // Refetch only when the underlying data window changes. Filter changes
+  // (payment method, deleted toggle) recompute totals from the in-memory
+  // bookings array via the derived effect below — no extra network calls.
   useEffect(() => {
     if (currentSite?._id || currentSite?.siteId) {
       fetchAnalyticsData();
     }
-  }, [dateRange, paymentMethodFilter, currentSite]);
+  }, [dateRange, currentSite]);
 
   // Fetch customers data for membership analytics
   useEffect(() => {
@@ -151,87 +153,73 @@ const Analytics = () => {
       const startDateTime = new Date(dateRange.startDate + 'T00:00:00').toISOString();
       const endDateTime = new Date(dateRange.endDate + 'T23:59:59').toISOString();
 
-      let bookingsResponse = null;
-      let dashboardResponse = null;
-
-      // For operators, handle API permission errors gracefully
-      if (currentUser && currentUser.role !== 'admin') {
-        console.log('Operator detected - using fallback data sources');
-        
-        try {
-          // Try to fetch bookings (operators might have access to this)
-          bookingsResponse = await apiService.getBookings({
+      // Paginate every booking in the window so totals reflect the full
+      // dataset, not just the most recent 1000 rows.
+      const fetchAllBookings = async () => {
+        const pageSize = 500;
+        const all = [];
+        let page = 1;
+        let totalPages = 1;
+        do {
+          const resp = await apiService.getBookings({
             siteId,
             dateFrom: startDateTime,
             dateTo: endDateTime,
-            limit: 1000
+            page,
+            limit: pageSize,
+            sortBy: 'createdAt',
+            sortOrder: 'desc'
           });
+          const batch = resp.data?.bookings || [];
+          all.push(...batch);
+          totalPages = resp.data?.pagination?.totalPages || 1;
+          page += 1;
+          if (batch.length === 0) break;
+        } while (page <= totalPages);
+        return all;
+      };
+
+      let fetchedBookings = [];
+      let dashboardResponse = { data: { summary: {}, insights: {} } };
+
+      if (currentUser && currentUser.role !== 'admin') {
+        try {
+          fetchedBookings = await fetchAllBookings();
         } catch (bookingError) {
           console.log('Booking API not accessible for operator, using fallback');
-          bookingsResponse = { data: { bookings: [] } };
+          fetchedBookings = [];
         }
-
-        // Skip dashboard analytics for operators (use local calculation)
-        dashboardResponse = { data: { summary: {}, insights: {} } };
       } else {
-        // Admin users - fetch normally
-        [bookingsResponse, dashboardResponse] = await Promise.all([
-          apiService.getBookings({
-            siteId,
-            dateFrom: startDateTime,
-            dateTo: endDateTime,
-            limit: 1000
-          }),
+        const [allBookings, dashResp] = await Promise.all([
+          fetchAllBookings(),
           apiService.getDashboardAnalytics({
             siteId,
             dateFrom: startDateTime,
             dateTo: endDateTime
           })
         ]);
+        fetchedBookings = allBookings;
+        dashboardResponse = dashResp;
       }
 
-      const fetchedBookings = bookingsResponse.data?.bookings || [];
-      
       // Filter bookings by operator if not admin
       let operatorFilteredBookings = fetchedBookings;
       if (currentUser && currentUser.role !== 'admin') {
-        operatorFilteredBookings = fetchedBookings.filter(booking => 
+        operatorFilteredBookings = fetchedBookings.filter(booking =>
           booking.operatorId === currentUser.operatorId
         );
         console.log(`Operator ${currentUser.operatorId} - Filtered ${operatorFilteredBookings.length} bookings from ${fetchedBookings.length} total`);
       }
-      
-      setBookings(operatorFilteredBookings);
-      
-      const dashboardData = dashboardResponse.data?.summary || {};
-      
-      // Filter bookings based on payment method filter for analytics calculation
-      const filteredBookingsForAnalytics = operatorFilteredBookings.filter(booking => {
-        if (paymentMethodFilter === 'all') return true;
-        return (booking.payment?.method === paymentMethodFilter || booking.paymentMethod === paymentMethodFilter);
-      });
-      
-      // Calculate parking revenue from filtered bookings
-      const calculatedParkingRevenue = filteredBookingsForAnalytics.reduce((total, booking) => {
-        // Skip membership payments as they are free (no revenue)
-        if (booking.payment?.method === 'membership' || booking.paymentMethod === 'membership') {
-          return total;
-        }
-        const amount = booking.payment?.amount || booking.totalAmount || 0;
-        return total + amount;
-      }, 0);
 
-      // Calculate membership analytics from customers data and API
+      setBookings(operatorFilteredBookings);
+
+      // Membership analytics still come from a separate API
       const membershipAnalytics = await calculateMembershipAnalytics();
-      
-      setAnalytics({
-        totalBookings: filteredBookingsForAnalytics.length,
-        totalRevenue: calculatedParkingRevenue, // Parking revenue only
-        activeBookings: filteredBookingsForAnalytics.filter(b => b.status === 'active').length,
-        completedBookings: filteredBookingsForAnalytics.filter(b => b.status === 'completed').length,
+      setAnalytics((prev) => ({
+        ...prev,
         membershipSales: membershipAnalytics.count,
         membershipRevenue: membershipAnalytics.revenue
-      });
+      }));
 
     } catch (error) {
       console.error('Failed to fetch analytics:', error);
@@ -240,6 +228,39 @@ const Analytics = () => {
       setLoading(false);
     }
   };
+
+  // Derive booking-card totals from the in-memory bookings array. This
+  // mirrors the filters applied to the on-screen list and the Excel
+  // export (payment method + deleted toggle) so the cards always agree
+  // with what's tabulated below and what gets exported.
+  useEffect(() => {
+    const filtered = bookings.filter((booking) => {
+      if (paymentMethodFilter !== 'all') {
+        const method = booking.payment?.method || booking.paymentMethod;
+        if (method !== paymentMethodFilter) return false;
+      }
+      if (showDeletedBookings) {
+        if (booking.status !== 'deleted') return false;
+      } else {
+        if (booking.status === 'deleted') return false;
+      }
+      return true;
+    });
+
+    const collectedRevenue = filtered.reduce((total, booking) => {
+      const method = booking.payment?.method || booking.paymentMethod;
+      if (method === 'membership') return total; // free for members
+      return total + (booking.payment?.amount || booking.totalAmount || 0);
+    }, 0);
+
+    setAnalytics((prev) => ({
+      ...prev,
+      totalBookings: filtered.length,
+      totalRevenue: collectedRevenue,
+      activeBookings: filtered.filter((b) => b.status === 'active').length,
+      completedBookings: filtered.filter((b) => b.status === 'completed').length
+    }));
+  }, [bookings, paymentMethodFilter, showDeletedBookings]);
 
   const handleDateRangeChange = (field, value) => {
     setDateRange(prev => ({ ...prev, [field]: value }));
