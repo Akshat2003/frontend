@@ -383,34 +383,27 @@ const Analytics = () => {
       return;
     }
 
+    if (filteredBookings.length === 0) {
+      setError('No bookings match the current filters');
+      return;
+    }
+
     setExcelExportLoading(true);
     setError(null);
 
     try {
-      const siteId = currentSite?._id || currentSite?.siteId;
-      
-      // Fetch all bookings for the site (no date or payment filter)
-      const response = await apiService.getBookings({
-        siteId,
-        limit: 10000, // Get all bookings
-        sortBy: 'createdAt',
-        sortOrder: 'desc'
-      });
-
-      const allBookings = response.data?.bookings || [];
-      
-      if (allBookings.length === 0) {
-        setError('No bookings found for this site');
-        return;
-      }
-
-      // Export to Excel
-      exportBookingsToExcel(
-        allBookings, 
+      await exportBookingsToExcel(
+        filteredBookings,
         currentSite?.siteName || 'Unknown Site',
-        currentSite?.siteId || currentSite?._id || 'Unknown'
+        currentSite?.siteId || currentSite?._id || 'Unknown',
+        {
+          dateRange,
+          paymentMethod: paymentMethodFilter,
+          searchTerm: searchTerm || undefined,
+          showDeletedBookings,
+          operatorId: currentUser && currentUser.role !== 'admin' ? currentUser.operatorId : undefined
+        }
       );
-
     } catch (error) {
       console.error('Excel export failed:', error);
       setError(error.message || 'Failed to export Excel file');
