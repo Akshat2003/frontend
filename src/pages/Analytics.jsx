@@ -704,7 +704,7 @@ const Analytics = () => {
               <p className="text-sm md:text-lg font-bold text-gray-900 break-words">
                 {loading ? <RefreshCw className="animate-spin text-gray-400" size={18} /> : formatCurrency(analytics.totalRevenue)}
               </p>
-              <p className="text-[10px] text-gray-400 mt-0.5">Active + Completed only</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">Completed bookings only</p>
             </div>
           </div>
         </div>

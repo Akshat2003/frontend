@@ -45,25 +45,20 @@ const totalDurationHrs = (booking) => {
 };
 
 // payment.amount stores the gross parking fee even for membership-paid bookings
-// (the membership discount is applied client-side only). For accurate revenue
-// figures we treat the *collected* amount as 0 for membership-paid bookings,
-// and surface the gross fee separately as "membership-discounted value".
-//
-// Cancelled and deleted bookings are also excluded from "collected" revenue —
-// they're reported as their own figures in the summary so the headline never
-// silently absorbs them.
+// (the membership discount is applied client-side only) and is also written
+// at booking-creation time on rows that were never completed. For accurate
+// "collected" revenue we count ONLY completed, non-membership-paid bookings.
+// Active, cancelled, deleted, and membership-paid all contribute 0; cancelled
+// and deleted are reported as their own figures in the summary.
 const isMembershipPaid = (booking) =>
   (booking.payment?.method || booking.paymentMethod || '').toLowerCase() === 'membership';
-
-const isCancelledOrDeleted = (booking) =>
-  booking.status === 'cancelled' || booking.status === 'deleted';
 
 const grossAmount = (booking) => booking.payment?.amount ?? booking.totalAmount ?? 0;
 
 const collectedAmount = (booking) =>
-  isMembershipPaid(booking) || isCancelledOrDeleted(booking) ? 0 : grossAmount(booking);
+  booking.status === 'completed' && !isMembershipPaid(booking) ? grossAmount(booking) : 0;
 
-const cancelledOrDeletedRevenue = (booking, status) =>
+const revenueIfStatus = (booking, status) =>
   booking.status === status && !isMembershipPaid(booking) ? grossAmount(booking) : 0;
 
 const membershipDiscountedAmount = (booking) =>
@@ -197,18 +192,17 @@ export const exportBookingsToExcel = async (
   const cancelledBookings = bookings.filter((b) => b.status === 'cancelled').length;
   const deletedBookings = bookings.filter((b) => b.status === 'deleted').length;
 
-  // collectedAmount() now returns 0 for cancelled/deleted/membership-paid,
-  // so this is the headline "real money" figure for active+completed only.
+  // collectedAmount() returns 0 unless the booking is completed and not
+  // membership-paid, so totalRevenue is the headline "completed money"
+  // figure. completedRevenue is kept for the Combined Revenue section.
   const totalRevenue = bookings.reduce((sum, b) => sum + collectedAmount(b), 0);
-  const completedRevenue = bookings
-    .filter((b) => b.status === 'completed')
-    .reduce((sum, b) => sum + collectedAmount(b), 0);
+  const completedRevenue = totalRevenue;
   const cancelledRevenue = bookings.reduce(
-    (sum, b) => sum + cancelledOrDeletedRevenue(b, 'cancelled'),
+    (sum, b) => sum + revenueIfStatus(b, 'cancelled'),
     0
   );
   const deletedRevenue = bookings.reduce(
-    (sum, b) => sum + cancelledOrDeletedRevenue(b, 'deleted'),
+    (sum, b) => sum + revenueIfStatus(b, 'deleted'),
     0
   );
   const membershipPaidCount = bookings.filter(isMembershipPaid).length;
@@ -253,11 +247,10 @@ export const exportBookingsToExcel = async (
   summarySheet.addRow(['Deleted Hourly Bookings', deletedBookings]);
   summarySheet.addRow([]);
 
-  summarySheet.addRow(['HOURLY REVENUE — COLLECTED (Active + Completed only)']).font = { bold: true, size: 14 };
+  summarySheet.addRow(['HOURLY REVENUE — COLLECTED (Completed bookings only)']).font = { bold: true, size: 14 };
   summarySheet.addRow([]);
   summarySheet.addRow(['Total Hourly Revenue Collected', totalRevenue]).getCell(2).numFmt = '₹#,##0.00';
-  summarySheet.addRow(['  (excludes cancelled, deleted and membership-paid bookings)']);
-  summarySheet.addRow(['Hourly Revenue Collected (Completed bookings only)', completedRevenue]).getCell(2).numFmt = '₹#,##0.00';
+  summarySheet.addRow(['  (excludes active, cancelled, deleted and membership-paid bookings)']);
   summarySheet.addRow(['Average Collected Revenue per Booking', avgRevenue]).getCell(2).numFmt = '₹#,##0.00';
   summarySheet.addRow([]);
 
