@@ -61,12 +61,8 @@ const triggerDownload = async (workbook, filename) => {
   URL.revokeObjectURL(url);
 };
 
-// ---------- Summary sheet ----------
-function buildSummarySheet(workbook, bookings, memberships, siteName, siteId, filters) {
-  const sheet = workbook.addWorksheet('Summary');
-  sheet.getColumn(1).width = 36;
-  sheet.getColumn(2).width = 26;
-
+// ---------- Stats helper (shared between Summary sheet and PDF) ----------
+export function computeReportStats(bookings, memberships) {
   const completedBookings = bookings.filter((b) => b.status === 'completed').length;
   const activeBookings = bookings.filter((b) => b.status === 'active').length;
   const cancelledBookings = bookings.filter((b) => b.status === 'cancelled').length;
@@ -78,109 +74,297 @@ function buildSummarySheet(workbook, bookings, memberships, siteName, siteId, fi
   const deletedRevenue = bookings.reduce((s, b) => s + revenueIfStatus(b, 'deleted'), 0);
   const avgRevenue = bookings.length ? collected / bookings.length : 0;
 
-  // Cash vs Online split — only counts completed, non-membership-paid bookings
-  // (the same set that contributes to "collected" revenue).
   const completedRevenueBookings = bookings.filter(
     (b) => b.status === 'completed' && !isMembershipPaid(b)
   );
   const cashBookings = completedRevenueBookings.filter((b) => bookingBucket(b) === 'Cash');
   const onlineBookings = completedRevenueBookings.filter((b) => bookingBucket(b) === 'Online');
-  const sumGross = (arr) => arr.reduce((s, b) => s + grossAmount(b), 0);
-
-  // Two-wheeler / four-wheeler split — same scope (completed, money-collecting).
   const twoWheelerBookings = completedRevenueBookings.filter(
     (b) => (b.vehicleType || '').toLowerCase() === 'two-wheeler'
   );
   const fourWheelerBookings = completedRevenueBookings.filter(
     (b) => (b.vehicleType || '').toLowerCase() === 'four-wheeler'
   );
+  const sumGross = (arr) => arr.reduce((s, b) => s + grossAmount(b), 0);
 
-  // Membership totals + cash/online split
   const cashMembers = memberships.filter((m) => membershipBucket(m) === 'Cash');
   const onlineMembers = memberships.filter((m) => membershipBucket(m) === 'Online');
   const sumAmount = (arr) => arr.reduce((s, m) => s + (m.amount || 0), 0);
   const totalMembershipRevenue = sumAmount(memberships);
   const completedMembershipRevenue = sumAmount(memberships.filter((m) => m.status === 'completed'));
 
-  const addCurrency = (label, value) => {
-    sheet.addRow([label, value]).getCell(2).numFmt = CURRENCY_FMT;
+  return {
+    counts: {
+      total: bookings.length,
+      completed: completedBookings,
+      active: activeBookings,
+      cancelled: cancelledBookings,
+      deleted: deletedBookings,
+      membershipPaid: membershipPaidCount
+    },
+    revenue: {
+      collected,
+      avgPerBooking: avgRevenue,
+      cancelled: cancelledRevenue,
+      deleted: deletedRevenue
+    },
+    byMethod: {
+      cash: { count: cashBookings.length, amount: sumGross(cashBookings) },
+      online: { count: onlineBookings.length, amount: sumGross(onlineBookings) }
+    },
+    byVehicle: {
+      twoWheeler: { count: twoWheelerBookings.length, amount: sumGross(twoWheelerBookings) },
+      fourWheeler: { count: fourWheelerBookings.length, amount: sumGross(fourWheelerBookings) }
+    },
+    memberships: {
+      total: memberships.length,
+      completed: memberships.filter((m) => m.status === 'completed').length,
+      totalRevenue: totalMembershipRevenue,
+      completedRevenue: completedMembershipRevenue,
+      cash: { count: cashMembers.length, amount: sumAmount(cashMembers) },
+      online: { count: onlineMembers.length, amount: sumAmount(onlineMembers) }
+    },
+    combined: {
+      totalRevenue: collected + totalMembershipRevenue,
+      completedRevenue: collected + completedMembershipRevenue
+    }
+  };
+}
+
+// ---------- Summary sheet (visually polished, single sheet) ----------
+const COLOR = {
+  titleBg: 'FF1A365D', // dark navy
+  titleText: 'FFFFFFFF',
+  bandBg: 'FF2D5B8C', // medium blue
+  bandText: 'FFFFFFFF',
+  subBandBg: 'FFE3EBF5', // pale blue
+  metricLabel: 'FF1F2937',
+  metricValue: 'FF111827',
+  currencyText: 'FF1B6E3F',
+  noteText: 'FF6B7280',
+  rowAltBg: 'FFF7FAFC',
+  totalBg: 'FFFEF5DC',
+  totalText: 'FF92400E',
+  border: 'FFD1D5DB'
+};
+
+const thinBorder = {
+  top: { style: 'thin', color: { argb: COLOR.border } },
+  left: { style: 'thin', color: { argb: COLOR.border } },
+  bottom: { style: 'thin', color: { argb: COLOR.border } },
+  right: { style: 'thin', color: { argb: COLOR.border } }
+};
+
+function buildSummarySheet(workbook, bookings, memberships, siteName, siteId, filters) {
+  const sheet = workbook.addWorksheet('Summary');
+
+  // 3-column layout: Label | Value | Note
+  sheet.getColumn(1).width = 42;
+  sheet.getColumn(2).width = 22;
+  sheet.getColumn(3).width = 56;
+
+  const stats = computeReportStats(bookings, memberships);
+
+  let currentRow = 1;
+
+  // ---- Title block (merged across all 3 cols, 2 rows tall) ----
+  sheet.mergeCells(currentRow, 1, currentRow + 1, 3);
+  const titleCell = sheet.getCell(currentRow, 1);
+  titleCell.value = {
+    richText: [
+      {
+        text: 'Parking Analytics Report\n',
+        font: { bold: true, size: 20, color: { argb: COLOR.titleText }, name: 'Calibri' }
+      },
+      {
+        text: `${siteName || 'All Sites'}${siteId ? `  ·  ${siteId}` : ''}`,
+        font: { size: 11, color: { argb: COLOR.titleText }, name: 'Calibri' }
+      }
+    ]
+  };
+  titleCell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true, indent: 1 };
+  titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.titleBg } };
+  sheet.getRow(currentRow).height = 30;
+  sheet.getRow(currentRow + 1).height = 24;
+  currentRow += 2;
+
+  // ---- Subtitle: period + generated ----
+  sheet.mergeCells(currentRow, 1, currentRow, 3);
+  const subtitleCell = sheet.getCell(currentRow, 1);
+  const periodLabel = filters.dateRange
+    ? `${filters.dateRange.startDate} to ${filters.dateRange.endDate}`
+    : 'All Time';
+  subtitleCell.value = `Period: ${periodLabel}    ·    Generated ${new Date().toLocaleString()}`;
+  subtitleCell.font = { size: 10, italic: true, color: { argb: COLOR.noteText } };
+  subtitleCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+  sheet.getRow(currentRow).height = 18;
+  currentRow += 1;
+
+  // Filter chips (only render if any were applied)
+  const filterChips = [];
+  if (filters.paymentMethod && filters.paymentMethod !== 'all') {
+    filterChips.push(`Payment: ${filters.paymentMethod}`);
+  }
+  if (filters.searchTerm) filterChips.push(`Search: "${filters.searchTerm}"`);
+  if (filters.operatorId) filterChips.push(`Operator: ${filters.operatorId}`);
+  if (filterChips.length) {
+    sheet.mergeCells(currentRow, 1, currentRow, 3);
+    const chipCell = sheet.getCell(currentRow, 1);
+    chipCell.value = `Filters · ${filterChips.join('  ·  ')}`;
+    chipCell.font = { size: 10, color: { argb: COLOR.noteText } };
+    chipCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+    currentRow += 1;
+  }
+
+  // Spacer
+  currentRow += 1;
+
+  // Helper: section band header
+  const addSectionBand = (title) => {
+    sheet.mergeCells(currentRow, 1, currentRow, 3);
+    const cell = sheet.getCell(currentRow, 1);
+    cell.value = title;
+    cell.font = { bold: true, size: 12, color: { argb: COLOR.bandText } };
+    cell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.bandBg } };
+    sheet.getRow(currentRow).height = 22;
+    currentRow += 1;
   };
 
-  // Header section
-  sheet.addRow(['REPORT']).font = SECTION_FONT;
-  sheet.addRow([]);
-  sheet.addRow(['Site', `${siteName || 'N/A'} (${siteId || 'N/A'})`]);
-  sheet.addRow([
-    'Date Range',
-    filters.dateRange
-      ? `${filters.dateRange.startDate} to ${filters.dateRange.endDate}`
-      : 'All Time'
-  ]);
-  if (filters.paymentMethod && filters.paymentMethod !== 'all') {
-    sheet.addRow(['Payment Method Filter', filters.paymentMethod]);
-  }
-  if (filters.searchTerm) sheet.addRow(['Search Term', filters.searchTerm]);
-  if (filters.operatorId) sheet.addRow(['Operator', filters.operatorId]);
-  sheet.addRow(['Generated At', new Date()]).getCell(2).numFmt = 'yyyy-mm-dd hh:mm:ss';
-  sheet.addRow([]);
+  // Helper: subsection mini-band
+  const addSubBand = (title) => {
+    sheet.mergeCells(currentRow, 1, currentRow, 3);
+    const cell = sheet.getCell(currentRow, 1);
+    cell.value = title;
+    cell.font = { bold: true, size: 10, color: { argb: COLOR.metricLabel } };
+    cell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.subBandBg } };
+    sheet.getRow(currentRow).height = 18;
+    currentRow += 1;
+  };
 
-  // Booking counts
-  sheet.addRow(['BOOKING COUNTS']).font = SECTION_FONT;
-  sheet.addRow([]);
-  sheet.addRow(['Total bookings', bookings.length]);
-  sheet.addRow(['Completed', completedBookings]);
-  sheet.addRow(['Active', activeBookings]);
-  sheet.addRow(['Cancelled', cancelledBookings]);
-  sheet.addRow(['Deleted', deletedBookings]);
-  sheet.addRow(['Paid via membership (free for member)', membershipPaidCount]);
-  sheet.addRow([]);
+  // Helper: a metric row (Label / Value / optional note)
+  // isCurrency formats col 2 as ₹ and tints text.
+  // emphasis=true applies a bolder, highlighted treatment.
+  const addMetric = (label, value, opts = {}) => {
+    const { isCurrency = false, note = '', emphasis = false } = opts;
+    const row = sheet.getRow(currentRow);
+    row.getCell(1).value = label;
+    row.getCell(1).font = {
+      bold: emphasis,
+      size: emphasis ? 11 : 10,
+      color: { argb: COLOR.metricLabel }
+    };
+    row.getCell(1).alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
 
-  // Hourly revenue — collected (completed only) + breakdowns
-  sheet.addRow(['HOURLY REVENUE COLLECTED (Completed bookings only)']).font = SECTION_FONT;
-  sheet.addRow([]);
-  addCurrency('Total hourly revenue collected', collected);
-  addCurrency('Average revenue per booking', avgRevenue);
-  sheet.addRow([]);
-  sheet.addRow(['  By payment method:']).font = { italic: true };
-  sheet.addRow(['Cash bookings', cashBookings.length]);
-  addCurrency('Cash revenue', sumGross(cashBookings));
-  sheet.addRow(['Online bookings (UPI / card / online / other)', onlineBookings.length]);
-  addCurrency('Online revenue', sumGross(onlineBookings));
-  sheet.addRow([]);
-  sheet.addRow(['  By vehicle type:']).font = { italic: true };
-  sheet.addRow(['Two-wheeler bookings', twoWheelerBookings.length]);
-  addCurrency('Two-wheeler revenue', sumGross(twoWheelerBookings));
-  sheet.addRow(['Four-wheeler bookings', fourWheelerBookings.length]);
-  addCurrency('Four-wheeler revenue', sumGross(fourWheelerBookings));
-  sheet.addRow([]);
+    row.getCell(2).value = value;
+    row.getCell(2).alignment = { vertical: 'middle', horizontal: 'right', indent: 1 };
+    row.getCell(2).font = {
+      bold: emphasis,
+      size: emphasis ? 11 : 10,
+      color: { argb: isCurrency ? COLOR.currencyText : COLOR.metricValue }
+    };
+    if (isCurrency) row.getCell(2).numFmt = CURRENCY_FMT;
+    else if (typeof value === 'number') row.getCell(2).numFmt = '#,##0';
 
-  // Revenue — cancelled / deleted
-  sheet.addRow(['REVENUE — CANCELLED & DELETED (separately)']).font = SECTION_FONT;
-  sheet.addRow([]);
-  addCurrency('Cancelled booking revenue', cancelledRevenue);
-  addCurrency('Deleted booking revenue', deletedRevenue);
-  sheet.addRow(['  (NOT included in the collected total above)']);
-  sheet.addRow([]);
+    if (note) {
+      row.getCell(3).value = note;
+      row.getCell(3).font = { italic: true, size: 9, color: { argb: COLOR.noteText } };
+      row.getCell(3).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+    }
 
-  // Memberships — intentionally global, not scoped to the selected site.
-  sheet.addRow(['MEMBERSHIP PURCHASES (global — across all sites)']).font = SECTION_FONT;
-  sheet.addRow([]);
-  sheet.addRow(['Total purchases', memberships.length]);
-  sheet.addRow(['Completed purchases', memberships.filter((m) => m.status === 'completed').length]);
-  addCurrency('Total membership revenue', totalMembershipRevenue);
-  addCurrency('Membership revenue (completed only)', completedMembershipRevenue);
-  sheet.addRow([]);
-  sheet.addRow(['Cash purchases', cashMembers.length]);
-  addCurrency('Cash revenue', sumAmount(cashMembers));
-  sheet.addRow(['Online purchases (card/upi/online/other)', onlineMembers.length]);
-  addCurrency('Online revenue', sumAmount(onlineMembers));
-  sheet.addRow([]);
+    if (emphasis) {
+      [1, 2, 3].forEach((c) => {
+        row.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.totalBg } };
+      });
+    }
 
-  // Combined
-  sheet.addRow(['COMBINED REVENUE (Completed bookings + Membership purchases)']).font = SECTION_FONT;
-  sheet.addRow([]);
-  addCurrency('Combined total', collected + totalMembershipRevenue);
-  addCurrency('Combined (completed only)', collected + completedMembershipRevenue);
+    [1, 2, 3].forEach((c) => (row.getCell(c).border = thinBorder));
+    row.height = 18;
+    currentRow += 1;
+  };
+
+  const addSpacer = () => {
+    currentRow += 1;
+  };
+
+  // ============ BOOKING COUNTS ============
+  addSectionBand('BOOKING COUNTS');
+  addMetric('Total bookings', stats.counts.total, { emphasis: true });
+  addMetric('Completed', stats.counts.completed);
+  addMetric('Active', stats.counts.active, { note: 'Vehicle still parked — payment not yet collected' });
+  addMetric('Cancelled', stats.counts.cancelled);
+  addMetric('Deleted', stats.counts.deleted);
+  addMetric('Paid via membership', stats.counts.membershipPaid, { note: 'Member parked free' });
+  addSpacer();
+
+  // ============ HOURLY REVENUE COLLECTED ============
+  addSectionBand('HOURLY REVENUE COLLECTED  ·  Completed bookings only');
+  addMetric('Total hourly revenue collected', stats.revenue.collected, {
+    isCurrency: true,
+    emphasis: true,
+    note: 'Real money taken in from completed bookings'
+  });
+  addMetric('Average revenue per booking', stats.revenue.avgPerBooking, { isCurrency: true });
+  addSpacer();
+
+  addSubBand('By payment method');
+  addMetric('Cash bookings', stats.byMethod.cash.count);
+  addMetric('Cash revenue', stats.byMethod.cash.amount, { isCurrency: true });
+  addMetric('Online bookings', stats.byMethod.online.count, {
+    note: 'UPI / card / online / other'
+  });
+  addMetric('Online revenue', stats.byMethod.online.amount, { isCurrency: true });
+  addSpacer();
+
+  addSubBand('By vehicle type');
+  addMetric('Two-wheeler bookings', stats.byVehicle.twoWheeler.count);
+  addMetric('Two-wheeler revenue', stats.byVehicle.twoWheeler.amount, { isCurrency: true });
+  addMetric('Four-wheeler bookings', stats.byVehicle.fourWheeler.count);
+  addMetric('Four-wheeler revenue', stats.byVehicle.fourWheeler.amount, { isCurrency: true });
+  addSpacer();
+
+  // ============ CANCELLED & DELETED ============
+  addSectionBand('CANCELLED & DELETED REVENUE  ·  Reported separately');
+  addMetric('Cancelled booking revenue', stats.revenue.cancelled, {
+    isCurrency: true,
+    note: 'NOT included in the collected total above'
+  });
+  addMetric('Deleted booking revenue', stats.revenue.deleted, {
+    isCurrency: true,
+    note: 'NOT included in the collected total above'
+  });
+  addSpacer();
+
+  // ============ MEMBERSHIPS ============
+  addSectionBand('MEMBERSHIP PURCHASES  ·  Global (across all sites)');
+  addMetric('Total purchases', stats.memberships.total, { emphasis: true });
+  addMetric('Completed purchases', stats.memberships.completed);
+  addMetric('Total membership revenue', stats.memberships.totalRevenue, { isCurrency: true });
+  addMetric('Membership revenue (completed only)', stats.memberships.completedRevenue, {
+    isCurrency: true
+  });
+  addSpacer();
+
+  addSubBand('By payment method');
+  addMetric('Cash purchases', stats.memberships.cash.count);
+  addMetric('Cash revenue', stats.memberships.cash.amount, { isCurrency: true });
+  addMetric('Online purchases', stats.memberships.online.count, {
+    note: 'card / UPI / online / other'
+  });
+  addMetric('Online revenue', stats.memberships.online.amount, { isCurrency: true });
+  addSpacer();
+
+  // ============ COMBINED REVENUE ============
+  addSectionBand('COMBINED REVENUE  ·  Completed bookings + Membership purchases');
+  addMetric('Combined total revenue', stats.combined.totalRevenue, {
+    isCurrency: true,
+    emphasis: true
+  });
+  addMetric('Combined revenue (completed only)', stats.combined.completedRevenue, {
+    isCurrency: true,
+    note: 'Real money collected — does not include foregone discounts'
+  });
 }
 
 // ---------- Bookings sheet ----------

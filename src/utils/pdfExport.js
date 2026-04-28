@@ -1,260 +1,341 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { computeReportStats } from './excelExport';
 
-// jsPDF + autoTable starts to choke (memory / call-stack) somewhere past
-// a few thousand rows. We cap the per-row table here so the export can
-// never crash the browser; the summary stats below still reflect every
-// matching booking. Users who need the full row dump should use Excel.
-const MAX_TABLE_ROWS = 500;
+// Color palette — matches the Excel Summary sheet so the two reports
+// feel like a set.
+const C = {
+  titleBg: [26, 54, 93], // dark navy
+  bandBg: [45, 91, 140], // medium blue
+  subBandBg: [227, 235, 245], // pale blue
+  text: [33, 37, 41],
+  noteText: [107, 114, 128],
+  currencyText: [27, 110, 63], // dark green
+  totalBg: [254, 245, 220], // light cream
+  totalText: [146, 64, 14],
+  border: [209, 213, 219]
+};
 
-const isMembershipPaid = (b) =>
-  (b.payment?.method || b.paymentMethod || '').toLowerCase() === 'membership';
-const grossAmount = (b) => b.payment?.amount ?? b.totalAmount ?? 0;
-// "Collected" = completed bookings only. Active bookings haven't paid yet
-// (vehicle still parked); cancelled and deleted bookings are reported as
-// their own figures below; membership-paid contribute 0 (members park free).
-const collectedAmount = (b) =>
-  b.status === 'completed' && !isMembershipPaid(b) ? grossAmount(b) : 0;
-const revenueIfStatus = (b, status) =>
-  b.status === status && !isMembershipPaid(b) ? grossAmount(b) : 0;
+const inrFormat = (n) =>
+  '₹ ' +
+  Number(n || 0).toLocaleString('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
 
-export const exportBookingsToPDF = (bookings, siteName, siteId, filters = {}) => {
-  const doc = new jsPDF();
+const intFormat = (n) => Number(n || 0).toLocaleString('en-IN');
+
+export const exportBookingsToPDF = (
+  bookings,
+  siteName,
+  siteId,
+  filters = {},
+  memberships = []
+) => {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 14;
 
   doc.setProperties({
-    title: `Booking Report - ${siteName}`,
-    subject: 'Parking Booking Analytics',
-    author: 'Parking Operator System',
-    creator: 'Parking Operator System'
+    title: `Parking Analytics Report — ${siteName}`,
+    subject: 'Parking Analytics',
+    author: 'Spark Machineries Operator',
+    creator: 'Spark Machineries Operator'
   });
 
-  // Header
-  doc.setFontSize(20);
+  const stats = computeReportStats(bookings, memberships);
+
+  // ---------- Title bar ----------
+  doc.setFillColor(...C.titleBg);
+  doc.rect(0, 0, pageWidth, 28, 'F');
+  doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
-  doc.text('Parking Booking Report', 14, 22);
-
-  doc.setFontSize(11);
+  doc.setFontSize(20);
+  doc.text('Parking Analytics Report', margin, 14);
   doc.setFont('helvetica', 'normal');
-  let headerY = 32;
-  doc.text(`Site: ${siteName} (${siteId})`, 14, headerY);
-  headerY += 6;
+  doc.setFontSize(11);
+  const subtitleParts = [siteName || 'All Sites'];
+  if (siteId) subtitleParts.push(siteId);
+  doc.text(subtitleParts.join('  ·  '), margin, 22);
+
+  // ---------- Subtitle ----------
+  doc.setTextColor(...C.noteText);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'italic');
+  const periodLabel = filters.dateRange
+    ? `${filters.dateRange.startDate} to ${filters.dateRange.endDate}`
+    : 'All Time';
   doc.text(
-    `Generated: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
-    14,
-    headerY
+    `Period: ${periodLabel}    ·    Generated ${new Date().toLocaleString()}`,
+    margin,
+    36
   );
-  headerY += 6;
-  if (filters.dateRange) {
-    doc.text(
-      `Date Range: ${filters.dateRange.startDate} to ${filters.dateRange.endDate}`,
-      14,
-      headerY
-    );
-    headerY += 6;
-  }
+
+  // Filter chips line (if any)
+  let yCursor = 42;
+  const filterChips = [];
   if (filters.paymentMethod && filters.paymentMethod !== 'all') {
-    doc.text(`Payment Method Filter: ${filters.paymentMethod}`, 14, headerY);
-    headerY += 6;
+    filterChips.push(`Payment: ${filters.paymentMethod}`);
   }
-  if (filters.searchTerm) {
-    doc.text(`Search: "${filters.searchTerm}"`, 14, headerY);
-    headerY += 6;
+  if (filters.searchTerm) filterChips.push(`Search: "${filters.searchTerm}"`);
+  if (filters.operatorId) filterChips.push(`Operator: ${filters.operatorId}`);
+  if (filterChips.length) {
+    doc.text(`Filters · ${filterChips.join('  ·  ')}`, margin, yCursor);
+    yCursor += 6;
   }
-  if (filters.operatorId) {
-    doc.text(`Operator: ${filters.operatorId}`, 14, headerY);
-    headerY += 6;
-  }
-  doc.text(`Total Records: ${bookings.length}`, 14, headerY);
-  headerY += 4;
+  yCursor += 2;
 
-  // Cap the table — keep summary on the full set
-  const tableBookings = bookings.slice(0, MAX_TABLE_ROWS);
-  const truncated = bookings.length > MAX_TABLE_ROWS;
-
-  if (truncated) {
-    doc.setFontSize(9);
-    doc.setTextColor(180, 0, 0);
-    doc.text(
-      `Showing first ${MAX_TABLE_ROWS} rows in the table below — summary uses all ${bookings.length} records. Use Excel export for the full row dump.`,
-      14,
-      headerY + 4
-    );
-    doc.setTextColor(0);
-    headerY += 10;
-  }
-
-  // Table data
-  const tableData = tableBookings.map((booking, index) => [
-    String(index + 1),
-    booking.vehicleNumber || 'N/A',
-    booking.customerName || 'N/A',
-    booking.phoneNumber || 'N/A',
-    (booking.vehicleType || '').replace('-', ' '),
-    booking.machineNumber || 'N/A',
-    booking.palletName || `Pallet ${booking.palletNumber}` || 'N/A',
-    (booking.status || '').charAt(0).toUpperCase() + (booking.status || '').slice(1),
-    (booking.payment?.method || booking.paymentMethod || 'N/A')
-      .charAt(0)
-      .toUpperCase() + (booking.payment?.method || booking.paymentMethod || 'N/A').slice(1),
-    `₹${grossAmount(booking).toFixed(2)}`,
-    booking.createdAt ? new Date(booking.createdAt).toLocaleDateString() : '',
-    booking.createdAt ? new Date(booking.createdAt).toLocaleTimeString() : ''
-  ]);
-
-  const headers = [
-    ['#', 'Vehicle No.', 'Customer', 'Phone', 'Vehicle Type', 'Machine', 'Pallet', 'Status', 'Payment', 'Amount', 'Date', 'Time']
-  ];
-
-  let tableEndY = headerY + 10;
-  autoTable(doc, {
-    head: headers,
-    body: tableData,
-    startY: headerY + 6,
-    styles: { fontSize: 8, cellPadding: 2 },
-    headStyles: { fillColor: [147, 51, 234], textColor: 255, fontStyle: 'bold' },
-    alternateRowStyles: { fillColor: [249, 250, 251] },
-    columnStyles: {
-      0: { halign: 'center', cellWidth: 8 },
-      1: { cellWidth: 18 },
-      2: { cellWidth: 22 },
-      3: { cellWidth: 18 },
-      4: { cellWidth: 15 },
-      5: { cellWidth: 12 },
-      6: { cellWidth: 12 },
-      7: { halign: 'center', cellWidth: 12 },
-      8: { cellWidth: 12 },
-      9: { halign: 'right', cellWidth: 15 },
-      10: { cellWidth: 18 },
-      11: { cellWidth: 18 }
-    },
-    margin: { top: 60, left: 10, right: 10 },
-    pageBreak: 'auto',
-    showHead: 'everyPage',
-    didDrawPage: (data) => {
-      tableEndY = data.cursor.y;
-    }
-  });
-
-  // Summary statistics — computed across ALL matching bookings, not the
-  // capped table. Headline revenue is "collected" (active + completed
-  // only); cancelled and deleted are reported separately so they don't
-  // silently inflate the figure. Membership-paid bookings collect ₹0
-  // (member parks free) and are also excluded from collected revenue.
-  const totalRevenue = bookings.reduce((sum, b) => sum + collectedAmount(b), 0);
-  const cancelledRevenue = bookings.reduce((s, b) => s + revenueIfStatus(b, 'cancelled'), 0);
-  const deletedRevenue = bookings.reduce((s, b) => s + revenueIfStatus(b, 'deleted'), 0);
-  const totalBookings = bookings.length;
-  const activeBookings = bookings.filter((b) => b.status === 'active').length;
-  const completedBookings = bookings.filter((b) => b.status === 'completed').length;
-  const cancelledBookings = bookings.filter((b) => b.status === 'cancelled').length;
-  const deletedBookings = bookings.filter((b) => b.status === 'deleted').length;
-
-  const paymentBreakdown = bookings.reduce((acc, booking) => {
-    const method = booking.payment?.method || booking.paymentMethod || 'unknown';
-    if (!acc[method]) acc[method] = { count: 0, amount: 0 };
-    acc[method].count += 1;
-    acc[method].amount += collectedAmount(booking);
-    return acc;
-  }, {});
-
-  const vehicleBreakdown = bookings.reduce((acc, booking) => {
-    const type = booking.vehicleType || 'unknown';
-    acc[type] = (acc[type] || 0) + 1;
-    return acc;
-  }, {});
-
-  const pageHeight = doc.internal.pageSize.height;
-  const ensureSpace = (requiredFromCursor) => {
-    if (tableEndY + requiredFromCursor > pageHeight - 20) {
+  // ---------- Section helpers ----------
+  const drawSectionBand = (title) => {
+    if (yCursor + 12 > pageHeight - 16) {
       doc.addPage();
-      tableEndY = 20;
+      yCursor = margin;
     }
+    doc.setFillColor(...C.bandBg);
+    doc.rect(margin, yCursor, pageWidth - margin * 2, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text(title, margin + 3, yCursor + 5.7);
+    yCursor += 8;
   };
 
-  ensureSpace(40);
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Summary & Insights', 14, tableEndY + 15);
-  tableEndY += 22;
+  // Render a metrics block as an autoTable for clean alignment
+  const renderMetricsTable = (rows, opts = {}) => {
+    const { highlightFirst = false } = opts;
+    autoTable(doc, {
+      startY: yCursor,
+      margin: { left: margin, right: margin },
+      head: [],
+      body: rows.map((r) => [r.label, r.value, r.note || '']),
+      theme: 'grid',
+      styles: {
+        fontSize: 9,
+        cellPadding: { top: 2.4, right: 3, bottom: 2.4, left: 3 },
+        textColor: C.text,
+        lineColor: C.border,
+        lineWidth: 0.1
+      },
+      columnStyles: {
+        0: { cellWidth: 80, fontStyle: 'normal' },
+        1: { cellWidth: 38, halign: 'right', fontStyle: 'bold' },
+        2: {
+          cellWidth: 'auto',
+          fontStyle: 'italic',
+          textColor: C.noteText,
+          fontSize: 8
+        }
+      },
+      didParseCell: (data) => {
+        const row = rows[data.row.index];
+        if (data.column.index === 1 && row?.isCurrency) {
+          data.cell.styles.textColor = C.currencyText;
+        }
+        if (highlightFirst && data.row.index === 0) {
+          data.cell.styles.fillColor = C.totalBg;
+          data.cell.styles.textColor = C.totalText;
+          data.cell.styles.fontStyle = 'bold';
+          if (data.column.index === 1 && row?.isCurrency) {
+            data.cell.styles.textColor = C.totalText;
+          }
+        }
+      },
+      didDrawPage: () => {
+        // No-op; we handle page breaks via yCursor below
+      }
+    });
+    yCursor = doc.lastAutoTable.finalY + 4;
+  };
 
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Financial Summary:', 14, tableEndY);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`Total Revenue (Completed only): ₹${totalRevenue.toFixed(2)}`, 20, tableEndY + 8);
-  doc.setFontSize(9);
-  doc.setTextColor(120);
-  doc.text(
-    '(excludes active, cancelled, deleted and membership-paid bookings)',
-    20,
-    tableEndY + 14
+  // Optional sub-band before a sub-grouping
+  const drawSubBand = (title) => {
+    if (yCursor + 8 > pageHeight - 16) {
+      doc.addPage();
+      yCursor = margin;
+    }
+    doc.setFillColor(...C.subBandBg);
+    doc.rect(margin, yCursor, pageWidth - margin * 2, 6, 'F');
+    doc.setTextColor(...C.text);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text(title, margin + 3, yCursor + 4.2);
+    yCursor += 6;
+  };
+
+  // ============ BOOKING COUNTS ============
+  drawSectionBand('BOOKING COUNTS');
+  renderMetricsTable(
+    [
+      { label: 'Total bookings', value: intFormat(stats.counts.total) },
+      { label: 'Completed', value: intFormat(stats.counts.completed) },
+      {
+        label: 'Active',
+        value: intFormat(stats.counts.active),
+        note: 'Vehicle still parked — payment not yet collected'
+      },
+      { label: 'Cancelled', value: intFormat(stats.counts.cancelled) },
+      { label: 'Deleted', value: intFormat(stats.counts.deleted) },
+      {
+        label: 'Paid via membership',
+        value: intFormat(stats.counts.membershipPaid),
+        note: 'Member parked free'
+      }
+    ],
+    { highlightFirst: true }
   );
-  doc.setTextColor(0);
-  doc.setFontSize(12);
-  doc.text(`Cancelled Booking Revenue: ₹${cancelledRevenue.toFixed(2)}`, 20, tableEndY + 22);
-  doc.text(`Deleted Booking Revenue: ₹${deletedRevenue.toFixed(2)}`, 20, tableEndY + 30);
-  tableEndY += 38;
 
-  ensureSpace(40);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Booking Statistics:', 14, tableEndY);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`Total Bookings: ${totalBookings}`, 20, tableEndY + 8);
-  doc.text(`Active: ${activeBookings}`, 20, tableEndY + 16);
-  doc.text(`Completed: ${completedBookings}`, 20, tableEndY + 24);
-  doc.text(`Cancelled: ${cancelledBookings}`, 20, tableEndY + 32);
-  doc.text(`Deleted: ${deletedBookings}`, 20, tableEndY + 40);
-  tableEndY += 48;
+  // ============ HOURLY REVENUE COLLECTED ============
+  drawSectionBand('HOURLY REVENUE COLLECTED  ·  Completed bookings only');
+  renderMetricsTable(
+    [
+      {
+        label: 'Total hourly revenue collected',
+        value: inrFormat(stats.revenue.collected),
+        isCurrency: true,
+        note: 'Real money taken in from completed bookings'
+      },
+      {
+        label: 'Average revenue per booking',
+        value: inrFormat(stats.revenue.avgPerBooking),
+        isCurrency: true
+      }
+    ],
+    { highlightFirst: true }
+  );
 
-  ensureSpace(40);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Payment Method Breakdown:', 14, tableEndY);
-  doc.setFont('helvetica', 'normal');
-  let yOffset = 8;
-  Object.entries(paymentBreakdown).forEach(([method, data]) => {
-    ensureSpace(yOffset + 8);
-    const methodName = method.charAt(0).toUpperCase() + method.slice(1);
-    doc.text(
-      `${methodName}: ${data.count} bookings  (₹${data.amount.toFixed(2)} collected)`,
-      20,
-      tableEndY + yOffset
-    );
-    yOffset += 8;
-  });
-  tableEndY += yOffset + 4;
+  drawSubBand('By payment method');
+  renderMetricsTable([
+    { label: 'Cash bookings', value: intFormat(stats.byMethod.cash.count) },
+    {
+      label: 'Cash revenue',
+      value: inrFormat(stats.byMethod.cash.amount),
+      isCurrency: true
+    },
+    {
+      label: 'Online bookings',
+      value: intFormat(stats.byMethod.online.count),
+      note: 'UPI / card / online / other'
+    },
+    {
+      label: 'Online revenue',
+      value: inrFormat(stats.byMethod.online.amount),
+      isCurrency: true
+    }
+  ]);
 
-  ensureSpace(20);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Vehicle Type Breakdown:', 14, tableEndY);
-  doc.setFont('helvetica', 'normal');
-  yOffset = 8;
-  Object.entries(vehicleBreakdown).forEach(([type, count]) => {
-    ensureSpace(yOffset + 8);
-    const typeName = type.replace('-', ' ').replace(/\b\w/g, (l) => l.toUpperCase());
-    doc.text(`${typeName}: ${count} bookings`, 20, tableEndY + yOffset);
-    yOffset += 8;
-  });
+  drawSubBand('By vehicle type');
+  renderMetricsTable([
+    { label: 'Two-wheeler bookings', value: intFormat(stats.byVehicle.twoWheeler.count) },
+    {
+      label: 'Two-wheeler revenue',
+      value: inrFormat(stats.byVehicle.twoWheeler.amount),
+      isCurrency: true
+    },
+    { label: 'Four-wheeler bookings', value: intFormat(stats.byVehicle.fourWheeler.count) },
+    {
+      label: 'Four-wheeler revenue',
+      value: inrFormat(stats.byVehicle.fourWheeler.amount),
+      isCurrency: true
+    }
+  ]);
 
-  // Footer
+  // ============ CANCELLED & DELETED ============
+  drawSectionBand('CANCELLED & DELETED REVENUE  ·  Reported separately');
+  renderMetricsTable([
+    {
+      label: 'Cancelled booking revenue',
+      value: inrFormat(stats.revenue.cancelled),
+      isCurrency: true,
+      note: 'NOT included in the collected total above'
+    },
+    {
+      label: 'Deleted booking revenue',
+      value: inrFormat(stats.revenue.deleted),
+      isCurrency: true,
+      note: 'NOT included in the collected total above'
+    }
+  ]);
+
+  // ============ MEMBERSHIPS ============
+  drawSectionBand('MEMBERSHIP PURCHASES  ·  Global (across all sites)');
+  renderMetricsTable(
+    [
+      { label: 'Total purchases', value: intFormat(stats.memberships.total) },
+      { label: 'Completed purchases', value: intFormat(stats.memberships.completed) },
+      {
+        label: 'Total membership revenue',
+        value: inrFormat(stats.memberships.totalRevenue),
+        isCurrency: true
+      },
+      {
+        label: 'Membership revenue (completed only)',
+        value: inrFormat(stats.memberships.completedRevenue),
+        isCurrency: true
+      }
+    ],
+    { highlightFirst: true }
+  );
+
+  drawSubBand('By payment method');
+  renderMetricsTable([
+    { label: 'Cash purchases', value: intFormat(stats.memberships.cash.count) },
+    {
+      label: 'Cash revenue',
+      value: inrFormat(stats.memberships.cash.amount),
+      isCurrency: true
+    },
+    {
+      label: 'Online purchases',
+      value: intFormat(stats.memberships.online.count),
+      note: 'card / UPI / online / other'
+    },
+    {
+      label: 'Online revenue',
+      value: inrFormat(stats.memberships.online.amount),
+      isCurrency: true
+    }
+  ]);
+
+  // ============ COMBINED REVENUE ============
+  drawSectionBand('COMBINED REVENUE  ·  Completed bookings + Membership purchases');
+  renderMetricsTable(
+    [
+      {
+        label: 'Combined total revenue',
+        value: inrFormat(stats.combined.totalRevenue),
+        isCurrency: true
+      },
+      {
+        label: 'Combined revenue (completed only)',
+        value: inrFormat(stats.combined.completedRevenue),
+        isCurrency: true,
+        note: 'Real money collected — does not include foregone discounts'
+      }
+    ],
+    { highlightFirst: true }
+  );
+
+  // ---------- Footer (every page) ----------
   const pageCount = doc.internal.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
-    doc.setFontSize(8);
+    doc.setDrawColor(...C.border);
+    doc.setLineWidth(0.2);
+    doc.line(margin, pageHeight - 12, pageWidth - margin, pageHeight - 12);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Page ${i} of ${pageCount}`, 14, doc.internal.pageSize.height - 10);
-    doc.text(
-      'Generated by Parking Operator System',
-      doc.internal.pageSize.width - 14,
-      doc.internal.pageSize.height - 10,
-      { align: 'right' }
-    );
+    doc.setFontSize(8);
+    doc.setTextColor(...C.noteText);
+    doc.text(`Page ${i} of ${pageCount}`, margin, pageHeight - 7);
+    doc.text('Spark Machineries Operator', pageWidth - margin, pageHeight - 7, {
+      align: 'right'
+    });
   }
 
   const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+  const safeSite = (siteId || siteName || 'site').replace(/\s+/g, '_');
   const dateRangeStr = filters.dateRange
     ? `_${filters.dateRange.startDate}_to_${filters.dateRange.endDate}`
     : '';
-  const filename = `Booking_Report_${siteId}${dateRangeStr}_${timestamp}.pdf`;
-
-  doc.save(filename);
+  doc.save(`Analytics_Report_${safeSite}${dateRangeStr}_${timestamp}.pdf`);
 };

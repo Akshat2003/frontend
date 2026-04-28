@@ -240,6 +240,53 @@ const Analytics = () => {
     setDateRange(prev => ({ ...prev, [field]: value }));
   };
 
+  // List of months from Sept 2025 → current month (most-recent first).
+  // Picking one sets the date range to that whole month.
+  const monthOptions = (() => {
+    const opts = [];
+    const start = new Date(2025, 8, 1); // September 2025
+    const now = new Date();
+    let cur = new Date(start.getFullYear(), start.getMonth(), 1);
+    while (cur <= now) {
+      const value = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}`;
+      const label = cur.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+      opts.push({ value, label });
+      cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+    }
+    return opts.reverse();
+  })();
+
+  // Derive which month option (if any) is currently selected based on dateRange
+  const selectedMonth = (() => {
+    if (!dateRange.startDate || !dateRange.endDate) return '';
+    const s = new Date(dateRange.startDate);
+    const e = new Date(dateRange.endDate);
+    const firstOfMonth = new Date(s.getFullYear(), s.getMonth(), 1);
+    const lastOfMonth = new Date(s.getFullYear(), s.getMonth() + 1, 0);
+    if (
+      s.getDate() === firstOfMonth.getDate() &&
+      s.getMonth() === firstOfMonth.getMonth() &&
+      s.getFullYear() === firstOfMonth.getFullYear() &&
+      e.getDate() === lastOfMonth.getDate() &&
+      e.getMonth() === lastOfMonth.getMonth() &&
+      e.getFullYear() === lastOfMonth.getFullYear()
+    ) {
+      return `${s.getFullYear()}-${String(s.getMonth() + 1).padStart(2, '0')}`;
+    }
+    return '';
+  })();
+
+  const handleMonthChange = (e) => {
+    const v = e.target.value;
+    if (!v) return;
+    const [year, month] = v.split('-').map(Number);
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 0); // last day of selected month
+    const fmt = (d) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    setDateRange({ startDate: fmt(start), endDate: fmt(end) });
+  };
+
   const handleBookingClick = (booking) => {
     setSelectedBooking(booking);
     setIsInfoModalOpen(true);
@@ -392,6 +439,24 @@ const Analytics = () => {
         return;
       }
 
+      // Memberships are global — fetch them in parallel for the PDF stats.
+      const membershipPaymentsForPdf = [];
+      let mpPage = 1;
+      let mpTotalPages = 1;
+      do {
+        const mpResp = await apiService.getMembershipPayments({
+          startDate: startDateTime,
+          endDate: endDateTime,
+          page: mpPage,
+          limit: 500
+        });
+        const mpBatch = mpResp.data?.payments || [];
+        membershipPaymentsForPdf.push(...mpBatch);
+        mpTotalPages = mpResp.data?.pagination?.totalPages || 1;
+        mpPage += 1;
+        if (mpBatch.length === 0) break;
+      } while (mpPage <= mpTotalPages);
+
       exportBookingsToPDF(
         exportBookings,
         currentSite?.siteName || 'Unknown Site',
@@ -401,7 +466,8 @@ const Analytics = () => {
           paymentMethod: paymentMethodFilter,
           searchTerm: searchTerm || undefined,
           operatorId: isOperator ? currentUser.operatorId : undefined
-        }
+        },
+        membershipPaymentsForPdf
       );
 
     } catch (error) {
@@ -622,6 +688,21 @@ const Analytics = () => {
                 onChange={(e) => handleDateRangeChange('endDate', e.target.value)}
                 className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
+            </div>
+            <div className="flex items-center gap-2 sm:ml-2">
+              <span className="text-sm font-medium text-gray-700">Month:</span>
+              <select
+                value={selectedMonth}
+                onChange={handleMonthChange}
+                className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="">Custom range</option>
+                {monthOptions.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
           
