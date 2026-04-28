@@ -16,8 +16,11 @@ const C = {
   border: [209, 213, 219]
 };
 
+// jsPDF's helvetica doesn't contain ₹ (U+20B9), so it renders it as a
+// placeholder with a tiny Unicode codepoint above. Use "Rs." prefix in
+// the PDF — the Excel export keeps ₹ since Excel handles Unicode fine.
 const inrFormat = (n) =>
-  '₹ ' +
+  'Rs. ' +
   Number(n || 0).toLocaleString('en-IN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
@@ -118,8 +121,8 @@ export const exportBookingsToPDF = (
         lineWidth: 0.1
       },
       columnStyles: {
-        0: { cellWidth: 80, fontStyle: 'normal' },
-        1: { cellWidth: 38, halign: 'right', fontStyle: 'bold' },
+        0: { cellWidth: 76, fontStyle: 'normal' },
+        1: { cellWidth: 46, halign: 'right', fontStyle: 'bold' },
         2: {
           cellWidth: 'auto',
           fontStyle: 'italic',
