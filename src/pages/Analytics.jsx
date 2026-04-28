@@ -42,6 +42,10 @@ const Analytics = () => {
     totalRevenue: 0,
     activeBookings: 0,
     completedBookings: 0,
+    cancelledBookings: 0,
+    cancelledRevenue: 0,
+    deletedBookings: 0,
+    deletedRevenue: 0,
     membershipSales: 0,
     membershipRevenue: 0
   });
@@ -82,12 +86,13 @@ const Analytics = () => {
 
   // Refetch summary + table whenever any of the inputs change. Each call
   // is cheap: a single Mongo aggregation for the summary and one capped
-  // getBookings request for the table.
+  // getBookings request for the table. The deleted toggle only affects
+  // the on-screen table filter, not the summary or fetch.
   useEffect(() => {
     if (currentSite?._id || currentSite?.siteId) {
       fetchAnalyticsData();
     }
-  }, [dateRange, currentSite, paymentMethodFilter, showDeletedBookings]);
+  }, [dateRange, currentSite, paymentMethodFilter]);
 
   // Fetch customers data for membership analytics
   useEffect(() => {
@@ -177,8 +182,7 @@ const Analytics = () => {
           siteId,
           dateFrom: startDateTime,
           dateTo: endDateTime,
-          paymentMethod: paymentMethodFilter !== 'all' ? paymentMethodFilter : undefined,
-          includeDeleted: showDeletedBookings ? 'only' : 'exclude'
+          paymentMethod: paymentMethodFilter !== 'all' ? paymentMethodFilter : undefined
         }),
         apiService.getBookings({
           siteId,
@@ -209,6 +213,10 @@ const Analytics = () => {
         totalRevenue: summary.collectedRevenue || 0,
         activeBookings: summary.activeBookings || 0,
         completedBookings: summary.completedBookings || 0,
+        cancelledBookings: summary.cancelledBookings || 0,
+        cancelledRevenue: summary.cancelledRevenue || 0,
+        deletedBookings: summary.deletedBookings || 0,
+        deletedRevenue: summary.deletedRevenue || 0,
         membershipSales: membershipAnalytics.count,
         membershipRevenue: membershipAnalytics.revenue
       });
@@ -670,8 +678,8 @@ const Analytics = () => {
         </div>
       )}
 
-      {/* Quick Insights - 2x3 Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
+      {/* Quick Insights */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 md:p-4">
           <div className="flex items-center space-x-2 md:space-x-3">
             <div className="bg-purple-100 p-2 rounded-lg flex-shrink-0">
@@ -696,6 +704,7 @@ const Analytics = () => {
               <p className="text-sm md:text-lg font-bold text-gray-900 break-words">
                 {loading ? <RefreshCw className="animate-spin text-gray-400" size={18} /> : formatCurrency(analytics.totalRevenue)}
               </p>
+              <p className="text-[10px] text-gray-400 mt-0.5">Active + Completed only</p>
             </div>
           </div>
         </div>
@@ -723,6 +732,40 @@ const Analytics = () => {
               <p className="text-xs md:text-sm text-gray-600">Completed Bookings</p>
               <p className="text-lg md:text-xl font-bold text-gray-900">
                 {loading ? <RefreshCw className="animate-spin text-gray-400" size={18} /> : analytics.completedBookings}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 md:p-4">
+          <div className="flex items-center space-x-2 md:space-x-3">
+            <div className="bg-yellow-100 p-2 rounded-lg flex-shrink-0">
+              <X className="text-yellow-700" size={16} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs md:text-sm text-gray-600">Cancelled Bookings</p>
+              <p className="text-lg md:text-xl font-bold text-gray-900">
+                {loading ? <RefreshCw className="animate-spin text-gray-400" size={18} /> : analytics.cancelledBookings}
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5 break-words">
+                {loading ? '' : `Revenue: ${formatCurrency(analytics.cancelledRevenue)}`}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 md:p-4">
+          <div className="flex items-center space-x-2 md:space-x-3">
+            <div className="bg-red-100 p-2 rounded-lg flex-shrink-0">
+              <Trash2 className="text-red-600" size={16} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs md:text-sm text-gray-600">Deleted Bookings</p>
+              <p className="text-lg md:text-xl font-bold text-gray-900">
+                {loading ? <RefreshCw className="animate-spin text-gray-400" size={18} /> : analytics.deletedBookings}
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5 break-words">
+                {loading ? '' : `Revenue: ${formatCurrency(analytics.deletedRevenue)}`}
               </p>
             </div>
           </div>

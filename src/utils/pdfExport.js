@@ -9,8 +9,14 @@ const MAX_TABLE_ROWS = 500;
 
 const isMembershipPaid = (b) =>
   (b.payment?.method || b.paymentMethod || '').toLowerCase() === 'membership';
+const isCancelledOrDeleted = (b) => b.status === 'cancelled' || b.status === 'deleted';
 const grossAmount = (b) => b.payment?.amount ?? b.totalAmount ?? 0;
-const collectedAmount = (b) => (isMembershipPaid(b) ? 0 : grossAmount(b));
+// Cancelled/deleted/membership-paid bookings contribute 0 to "collected" revenue.
+// The cancelled/deleted figures are reported separately below.
+const collectedAmount = (b) =>
+  isMembershipPaid(b) || isCancelledOrDeleted(b) ? 0 : grossAmount(b);
+const revenueIfStatus = (b, status) =>
+  b.status === status && !isMembershipPaid(b) ? grossAmount(b) : 0;
 
 export const exportBookingsToPDF = (bookings, siteName, siteId, filters = {}) => {
   const doc = new jsPDF();
@@ -134,15 +140,18 @@ export const exportBookingsToPDF = (bookings, siteName, siteId, filters = {}) =>
   });
 
   // Summary statistics — computed across ALL matching bookings, not the
-  // capped table. Membership-paid bookings collect ₹0 (member parks free)
-  // so they're excluded from revenue but still counted as bookings.
+  // capped table. Headline revenue is "collected" (active + completed
+  // only); cancelled and deleted are reported separately so they don't
+  // silently inflate the figure. Membership-paid bookings collect ₹0
+  // (member parks free) and are also excluded from collected revenue.
   const totalRevenue = bookings.reduce((sum, b) => sum + collectedAmount(b), 0);
+  const cancelledRevenue = bookings.reduce((s, b) => s + revenueIfStatus(b, 'cancelled'), 0);
+  const deletedRevenue = bookings.reduce((s, b) => s + revenueIfStatus(b, 'deleted'), 0);
   const totalBookings = bookings.length;
   const activeBookings = bookings.filter((b) => b.status === 'active').length;
   const completedBookings = bookings.filter((b) => b.status === 'completed').length;
-  const cancelledBookings = bookings.filter(
-    (b) => b.status === 'cancelled' || b.status === 'deleted'
-  ).length;
+  const cancelledBookings = bookings.filter((b) => b.status === 'cancelled').length;
+  const deletedBookings = bookings.filter((b) => b.status === 'deleted').length;
 
   const paymentBreakdown = bookings.reduce((acc, booking) => {
     const method = booking.payment?.method || booking.paymentMethod || 'unknown';
@@ -176,26 +185,30 @@ export const exportBookingsToPDF = (bookings, siteName, siteId, filters = {}) =>
   doc.setFont('helvetica', 'bold');
   doc.text('Financial Summary:', 14, tableEndY);
   doc.setFont('helvetica', 'normal');
-  doc.text(`Hourly Revenue Collected: ₹${totalRevenue.toFixed(2)}`, 20, tableEndY + 8);
+  doc.text(`Total Revenue (Active + Completed): ₹${totalRevenue.toFixed(2)}`, 20, tableEndY + 8);
   doc.setFontSize(9);
   doc.setTextColor(120);
   doc.text(
-    '(excludes membership-paid bookings — those parked free, no money collected)',
+    '(excludes cancelled, deleted and membership-paid bookings)',
     20,
     tableEndY + 14
   );
   doc.setTextColor(0);
   doc.setFontSize(12);
-  tableEndY += 22;
+  doc.text(`Cancelled Booking Revenue: ₹${cancelledRevenue.toFixed(2)}`, 20, tableEndY + 22);
+  doc.text(`Deleted Booking Revenue: ₹${deletedRevenue.toFixed(2)}`, 20, tableEndY + 30);
+  tableEndY += 38;
 
+  ensureSpace(40);
   doc.setFont('helvetica', 'bold');
   doc.text('Booking Statistics:', 14, tableEndY);
   doc.setFont('helvetica', 'normal');
   doc.text(`Total Bookings: ${totalBookings}`, 20, tableEndY + 8);
   doc.text(`Active: ${activeBookings}`, 20, tableEndY + 16);
   doc.text(`Completed: ${completedBookings}`, 20, tableEndY + 24);
-  doc.text(`Cancelled/Deleted: ${cancelledBookings}`, 20, tableEndY + 32);
-  tableEndY += 40;
+  doc.text(`Cancelled: ${cancelledBookings}`, 20, tableEndY + 32);
+  doc.text(`Deleted: ${deletedBookings}`, 20, tableEndY + 40);
+  tableEndY += 48;
 
   ensureSpace(40);
   doc.setFont('helvetica', 'bold');
