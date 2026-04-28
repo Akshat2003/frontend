@@ -20,13 +20,17 @@ const styleHeaderRow = (sheet, rowNumber = 1) => {
   row.alignment = { vertical: 'middle', horizontal: 'center' };
 };
 
-const isMembershipPaid = (b) =>
-  (b.payment?.method || b.paymentMethod || '').toLowerCase() === 'membership';
+const bookingPaymentMethod = (b) =>
+  (b.payment?.method || b.paymentMethod || '').toLowerCase();
+const isMembershipPaid = (b) => bookingPaymentMethod(b) === 'membership';
 const grossAmount = (b) => b.payment?.amount ?? b.totalAmount ?? 0;
 const collectedAmount = (b) =>
   b.status === 'completed' && !isMembershipPaid(b) ? grossAmount(b) : 0;
 const revenueIfStatus = (b, status) =>
   b.status === status && !isMembershipPaid(b) ? grossAmount(b) : 0;
+// Bucket a completed booking's payment method into Cash vs Online (anything
+// non-cash, non-membership). Mirrors the membership bucket convention.
+const bookingBucket = (b) => (bookingPaymentMethod(b) === 'cash' ? 'Cash' : 'Online');
 
 const totalDurationHrs = (b) => {
   if (b.duration && (b.duration.hours != null || b.duration.minutes != null)) {
@@ -74,6 +78,23 @@ function buildSummarySheet(workbook, bookings, memberships, siteName, siteId, fi
   const deletedRevenue = bookings.reduce((s, b) => s + revenueIfStatus(b, 'deleted'), 0);
   const avgRevenue = bookings.length ? collected / bookings.length : 0;
 
+  // Cash vs Online split — only counts completed, non-membership-paid bookings
+  // (the same set that contributes to "collected" revenue).
+  const completedRevenueBookings = bookings.filter(
+    (b) => b.status === 'completed' && !isMembershipPaid(b)
+  );
+  const cashBookings = completedRevenueBookings.filter((b) => bookingBucket(b) === 'Cash');
+  const onlineBookings = completedRevenueBookings.filter((b) => bookingBucket(b) === 'Online');
+  const sumGross = (arr) => arr.reduce((s, b) => s + grossAmount(b), 0);
+
+  // Two-wheeler / four-wheeler split — same scope (completed, money-collecting).
+  const twoWheelerBookings = completedRevenueBookings.filter(
+    (b) => (b.vehicleType || '').toLowerCase() === 'two-wheeler'
+  );
+  const fourWheelerBookings = completedRevenueBookings.filter(
+    (b) => (b.vehicleType || '').toLowerCase() === 'four-wheeler'
+  );
+
   // Membership totals + cash/online split
   const cashMembers = memberships.filter((m) => membershipBucket(m) === 'Cash');
   const onlineMembers = memberships.filter((m) => membershipBucket(m) === 'Online');
@@ -115,11 +136,23 @@ function buildSummarySheet(workbook, bookings, memberships, siteName, siteId, fi
   sheet.addRow(['Paid via membership (free for member)', membershipPaidCount]);
   sheet.addRow([]);
 
-  // Revenue — collected (completed only)
-  sheet.addRow(['REVENUE — COLLECTED (Completed bookings only)']).font = SECTION_FONT;
+  // Hourly revenue — collected (completed only) + breakdowns
+  sheet.addRow(['HOURLY REVENUE COLLECTED (Completed bookings only)']).font = SECTION_FONT;
   sheet.addRow([]);
-  addCurrency('Total revenue collected', collected);
+  addCurrency('Total hourly revenue collected', collected);
   addCurrency('Average revenue per booking', avgRevenue);
+  sheet.addRow([]);
+  sheet.addRow(['  By payment method:']).font = { italic: true };
+  sheet.addRow(['Cash bookings', cashBookings.length]);
+  addCurrency('Cash revenue', sumGross(cashBookings));
+  sheet.addRow(['Online bookings (UPI / card / online / other)', onlineBookings.length]);
+  addCurrency('Online revenue', sumGross(onlineBookings));
+  sheet.addRow([]);
+  sheet.addRow(['  By vehicle type:']).font = { italic: true };
+  sheet.addRow(['Two-wheeler bookings', twoWheelerBookings.length]);
+  addCurrency('Two-wheeler revenue', sumGross(twoWheelerBookings));
+  sheet.addRow(['Four-wheeler bookings', fourWheelerBookings.length]);
+  addCurrency('Four-wheeler revenue', sumGross(fourWheelerBookings));
   sheet.addRow([]);
 
   // Revenue — cancelled / deleted
