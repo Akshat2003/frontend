@@ -48,11 +48,7 @@ const Analytics = () => {
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [loadingProgress, setLoadingProgress] = useState({
-    fetched: 0,
-    total: null,
-    phase: 'idle' // 'idle' | 'connecting' | 'bookings' | 'memberships'
-  });
+  const [bookingsTablePagination, setBookingsTablePagination] = useState(null);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [exportLoading, setExportLoading] = useState(false);
@@ -84,14 +80,14 @@ const Analytics = () => {
 
   const currentUser = getCurrentUser();
 
-  // Refetch only when the underlying data window changes. Filter changes
-  // (payment method, deleted toggle) recompute totals from the in-memory
-  // bookings array via the derived effect below — no extra network calls.
+  // Refetch summary + table whenever any of the inputs change. Each call
+  // is cheap: a single Mongo aggregation for the summary and one capped
+  // getBookings request for the table.
   useEffect(() => {
     if (currentSite?._id || currentSite?.siteId) {
       fetchAnalyticsData();
     }
-  }, [dateRange, currentSite]);
+  }, [dateRange, currentSite, paymentMethodFilter, showDeletedBookings]);
 
   // Fetch customers data for membership analytics
   useEffect(() => {
@@ -154,12 +150,16 @@ const Analytics = () => {
     return { count, revenue };
   };
 
+  // Used by the bookings table at the bottom of the page. We cap visible
+  // rows so a wide date range can't render 16k+ DOM rows; cards above
+  // come from a server-side aggregate and reflect the FULL dataset.
+  const TABLE_LIMIT = 1000;
+
   const fetchAnalyticsData = async () => {
     const fetchId = ++fetchIdRef.current;
     const isCurrent = () => fetchId === fetchIdRef.current;
 
     setLoading(true);
-    setLoadingProgress({ fetched: 0, total: null, phase: 'connecting' });
     setError(null);
 
     try {
@@ -167,82 +167,51 @@ const Analytics = () => {
       const startDateTime = new Date(dateRange.startDate + 'T00:00:00').toISOString();
       const endDateTime = new Date(dateRange.endDate + 'T23:59:59').toISOString();
 
-      // Paginate every booking in the window so totals reflect the full
-      // dataset, not just the most recent 1000 rows.
-      const fetchAllBookings = async () => {
-        const pageSize = 500;
-        const all = [];
-        let page = 1;
-        let totalPages = 1;
-        do {
-          const resp = await apiService.getBookings({
-            siteId,
-            dateFrom: startDateTime,
-            dateTo: endDateTime,
-            page,
-            limit: pageSize,
-            sortBy: 'createdAt',
-            sortOrder: 'desc'
-          });
-          if (!isCurrent()) return all; // a newer fetch superseded us
-          const batch = resp.data?.bookings || [];
-          all.push(...batch);
-          totalPages = resp.data?.pagination?.totalPages || 1;
-          const totalItems = resp.data?.pagination?.totalItems ?? all.length;
-          setLoadingProgress({ fetched: all.length, total: totalItems, phase: 'bookings' });
-          page += 1;
-          if (batch.length === 0) break;
-        } while (page <= totalPages);
-        return all;
-      };
-
-      let fetchedBookings = [];
-      let dashboardResponse = { data: { summary: {}, insights: {} } };
-
-      if (currentUser && currentUser.role !== 'admin') {
-        try {
-          fetchedBookings = await fetchAllBookings();
-        } catch (bookingError) {
-          console.log('Booking API not accessible for operator, using fallback');
-          fetchedBookings = [];
-        }
-      } else {
-        const [allBookings, dashResp] = await Promise.all([
-          fetchAllBookings(),
-          apiService.getDashboardAnalytics({
-            siteId,
-            dateFrom: startDateTime,
-            dateTo: endDateTime
-          })
-        ]);
-        fetchedBookings = allBookings;
-        dashboardResponse = dashResp;
-      }
+      // Two cheap calls in parallel:
+      //   1. Aggregate summary endpoint — returns totals for the cards
+      //      (counts + collected revenue) computed server-side. No row
+      //      transfer, fixed-size response.
+      //   2. A paginated row fetch (capped) for the on-screen table.
+      const [summaryResp, bookingsResp, membershipAnalytics] = await Promise.all([
+        apiService.getBookingSummary({
+          siteId,
+          dateFrom: startDateTime,
+          dateTo: endDateTime,
+          paymentMethod: paymentMethodFilter !== 'all' ? paymentMethodFilter : undefined,
+          includeDeleted: showDeletedBookings ? 'only' : 'exclude'
+        }),
+        apiService.getBookings({
+          siteId,
+          dateFrom: startDateTime,
+          dateTo: endDateTime,
+          limit: TABLE_LIMIT,
+          sortBy: 'createdAt',
+          sortOrder: 'desc'
+        }),
+        calculateMembershipAnalytics()
+      ]);
 
       if (!isCurrent()) return;
 
-      // Filter bookings by operator if not admin
+      const fetchedBookings = bookingsResp?.data?.bookings || [];
       let operatorFilteredBookings = fetchedBookings;
       if (currentUser && currentUser.role !== 'admin') {
-        operatorFilteredBookings = fetchedBookings.filter(booking =>
+        operatorFilteredBookings = fetchedBookings.filter((booking) =>
           booking.operatorId === currentUser.operatorId
         );
-        console.log(`Operator ${currentUser.operatorId} - Filtered ${operatorFilteredBookings.length} bookings from ${fetchedBookings.length} total`);
       }
-
       setBookings(operatorFilteredBookings);
+      setBookingsTablePagination(bookingsResp?.data?.pagination || null);
 
-      // Membership analytics still come from a separate API
-      setLoadingProgress((prev) => ({ ...prev, phase: 'memberships' }));
-      const membershipAnalytics = await calculateMembershipAnalytics();
-      if (!isCurrent()) return;
-
-      setAnalytics((prev) => ({
-        ...prev,
+      const summary = summaryResp?.data || {};
+      setAnalytics({
+        totalBookings: summary.totalBookings || 0,
+        totalRevenue: summary.collectedRevenue || 0,
+        activeBookings: summary.activeBookings || 0,
+        completedBookings: summary.completedBookings || 0,
         membershipSales: membershipAnalytics.count,
         membershipRevenue: membershipAnalytics.revenue
-      }));
-
+      });
     } catch (error) {
       if (isCurrent()) {
         console.error('Failed to fetch analytics:', error);
@@ -254,43 +223,9 @@ const Analytics = () => {
       // the active fetch is still running.
       if (isCurrent()) {
         setLoading(false);
-        setLoadingProgress({ fetched: 0, total: null, phase: 'idle' });
       }
     }
   };
-
-  // Derive booking-card totals from the in-memory bookings array. This
-  // mirrors the filters applied to the on-screen list and the Excel
-  // export (payment method + deleted toggle) so the cards always agree
-  // with what's tabulated below and what gets exported.
-  useEffect(() => {
-    const filtered = bookings.filter((booking) => {
-      if (paymentMethodFilter !== 'all') {
-        const method = booking.payment?.method || booking.paymentMethod;
-        if (method !== paymentMethodFilter) return false;
-      }
-      if (showDeletedBookings) {
-        if (booking.status !== 'deleted') return false;
-      } else {
-        if (booking.status === 'deleted') return false;
-      }
-      return true;
-    });
-
-    const collectedRevenue = filtered.reduce((total, booking) => {
-      const method = booking.payment?.method || booking.paymentMethod;
-      if (method === 'membership') return total; // free for members
-      return total + (booking.payment?.amount || booking.totalAmount || 0);
-    }, 0);
-
-    setAnalytics((prev) => ({
-      ...prev,
-      totalBookings: filtered.length,
-      totalRevenue: collectedRevenue,
-      activeBookings: filtered.filter((b) => b.status === 'active').length,
-      completedBookings: filtered.filter((b) => b.status === 'completed').length
-    }));
-  }, [bookings, paymentMethodFilter, showDeletedBookings]);
 
   const handleDateRangeChange = (field, value) => {
     setDateRange(prev => ({ ...prev, [field]: value }));
@@ -713,48 +648,27 @@ const Analytics = () => {
         </div>
       </div>
 
-      {/* Progress loader during initial fetch */}
-      {loading && (() => {
-        const { fetched, total, phase } = loadingProgress;
-        let pct;
-        let label;
-        if (phase === 'connecting') {
-          pct = 5;
-          label = 'Connecting to server...';
-        } else if (phase === 'bookings') {
-          if (total && total > 0) {
-            pct = Math.min(95, 5 + (fetched / total) * 90);
-            label = `${fetched.toLocaleString()} of ${total.toLocaleString()} bookings loaded`;
-          } else {
-            pct = 10;
-            label = 'Loading bookings...';
-          }
-        } else if (phase === 'memberships') {
-          pct = 95;
-          label = 'Loading membership data...';
-        } else {
-          pct = 100;
-          label = 'Finalizing...';
-        }
-        return (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 md:p-4">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center space-x-2">
-                <RefreshCw className="text-purple-600 animate-spin" size={16} />
-                <span className="text-sm font-medium text-gray-700">Loading analytics...</span>
-              </div>
-              <span className="text-sm font-medium text-gray-700">{Math.round(pct)}%</span>
-            </div>
-            <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-purple-600 transition-all duration-300 ease-out"
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <p className="text-xs text-gray-500 mt-2">{label}</p>
+      {/* Loader while summary + table + memberships fetch in parallel. */}
+      {loading && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 md:p-4">
+          <div className="flex items-center space-x-2 mb-2">
+            <RefreshCw className="text-purple-600 animate-spin" size={16} />
+            <span className="text-sm font-medium text-gray-700">Loading analytics...</span>
           </div>
-        );
-      })()}
+          <div className="h-2 bg-gray-200 rounded-full overflow-hidden relative">
+            <div className="absolute inset-y-0 -left-1/3 w-1/3 bg-purple-600 animate-[loaderSlide_1.4s_ease-in-out_infinite]" />
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            Computing totals from the server and pulling the latest bookings…
+          </p>
+          <style>{`
+            @keyframes loaderSlide {
+              0% { left: -33%; }
+              100% { left: 100%; }
+            }
+          `}</style>
+        </div>
+      )}
 
       {/* Quick Insights - 2x3 Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
@@ -899,6 +813,15 @@ const Analytics = () => {
               </span>
             </div>
           </div>
+          {bookingsTablePagination &&
+            bookingsTablePagination.totalItems > bookingsTablePagination.itemsPerPage && (
+              <p className="text-xs text-gray-500 mt-2">
+                Showing the {bookingsTablePagination.itemsPerPage.toLocaleString()} most recent of{' '}
+                {bookingsTablePagination.totalItems.toLocaleString()} matching bookings. The cards
+                above reflect every booking in the selected range — use Excel export to download
+                them all.
+              </p>
+            )}
         </div>
 
         {loading ? (

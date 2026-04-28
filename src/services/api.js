@@ -176,6 +176,18 @@ class ApiService {
     });
   }
 
+  async getBookingSummary(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.siteId) params.append('siteId', filters.siteId);
+    if (filters.dateFrom) params.append('dateFrom', filters.dateFrom);
+    if (filters.dateTo) params.append('dateTo', filters.dateTo);
+    if (filters.paymentMethod) params.append('paymentMethod', filters.paymentMethod);
+    if (filters.includeDeleted) params.append('includeDeleted', filters.includeDeleted);
+    const queryString = params.toString();
+    const endpoint = queryString ? `/bookings/summary?${queryString}` : '/bookings/summary';
+    return this.request(endpoint);
+  }
+
   async getBookings(filters = {}) {
     const queryParams = new URLSearchParams();
     
