@@ -60,10 +60,6 @@ export const exportBookingsToPDF = (bookings, siteName, siteId, filters = {}) =>
     doc.text(`Search: "${filters.searchTerm}"`, 14, headerY);
     headerY += 6;
   }
-  if (filters.showDeletedBookings) {
-    doc.text('View: Deleted bookings only', 14, headerY);
-    headerY += 6;
-  }
   if (filters.operatorId) {
     doc.text(`Operator: ${filters.operatorId}`, 14, headerY);
     headerY += 6;

@@ -369,6 +369,8 @@ const Analytics = () => {
         if (batch.length === 0) break;
       } while (page <= totalPages);
 
+      // Don't filter on the deleted toggle — see comment in handleExcelExport.
+      // The PDF summary needs cancelled/deleted rows to report their revenue.
       const isOperator = currentUser && currentUser.role !== 'admin';
       const term = searchTerm.toLowerCase();
       const exportBookings = allBookings.filter((booking) => {
@@ -382,10 +384,7 @@ const Analytics = () => {
         const matchesPaymentMethod = paymentMethodFilter === 'all' ||
           booking.payment?.method === paymentMethodFilter ||
           booking.paymentMethod === paymentMethodFilter;
-        const matchesDeletedStatus = showDeletedBookings
-          ? booking.status === 'deleted'
-          : booking.status !== 'deleted';
-        return matchesSearch && matchesPaymentMethod && matchesDeletedStatus;
+        return matchesSearch && matchesPaymentMethod;
       });
 
       if (exportBookings.length === 0) {
@@ -401,7 +400,6 @@ const Analytics = () => {
           dateRange,
           paymentMethod: paymentMethodFilter,
           searchTerm: searchTerm || undefined,
-          showDeletedBookings,
           operatorId: isOperator ? currentUser.operatorId : undefined
         }
       );
@@ -450,7 +448,11 @@ const Analytics = () => {
         if (batch.length === 0) break;
       } while (page <= totalPages);
 
-      // Same client-side filtering used by the on-screen list
+      // Filter to mirror the relevant dashboard filters. Note we deliberately
+      // do NOT filter on the deleted toggle here — the export needs cancelled
+      // and deleted rows so the summary's separate revenue figures for those
+      // statuses are computed correctly. Bookings rows still carry a status
+      // column so they're easy to identify.
       const isOperator = currentUser && currentUser.role !== 'admin';
       const term = searchTerm.toLowerCase();
       const exportBookings = allBookings.filter((booking) => {
@@ -464,10 +466,7 @@ const Analytics = () => {
         const matchesPaymentMethod = paymentMethodFilter === 'all' ||
           booking.payment?.method === paymentMethodFilter ||
           booking.paymentMethod === paymentMethodFilter;
-        const matchesDeletedStatus = showDeletedBookings
-          ? booking.status === 'deleted'
-          : booking.status !== 'deleted';
-        return matchesSearch && matchesPaymentMethod && matchesDeletedStatus;
+        return matchesSearch && matchesPaymentMethod;
       });
 
       // Paginate every membership payment in the same date window.
@@ -502,7 +501,6 @@ const Analytics = () => {
           dateRange,
           paymentMethod: paymentMethodFilter,
           searchTerm: searchTerm || undefined,
-          showDeletedBookings,
           operatorId: isOperator ? currentUser.operatorId : undefined
         },
         membershipPayments

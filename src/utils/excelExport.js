@@ -120,7 +120,6 @@ function buildSummarySheet(workbook, bookings, memberships, siteName, siteId, fi
     sheet.addRow(['Payment Method Filter', filters.paymentMethod]);
   }
   if (filters.searchTerm) sheet.addRow(['Search Term', filters.searchTerm]);
-  if (filters.showDeletedBookings) sheet.addRow(['View', 'Deleted bookings only']);
   if (filters.operatorId) sheet.addRow(['Operator', filters.operatorId]);
   sheet.addRow(['Generated At', new Date()]).getCell(2).numFmt = 'yyyy-mm-dd hh:mm:ss';
   sheet.addRow([]);
