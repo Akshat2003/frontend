@@ -117,14 +117,15 @@ const Analytics = () => {
       count = activeMembers.length;
     }
 
-    // Get actual revenue from MembershipPayment collection
+    // Get actual revenue from MembershipPayment collection.
+    // Membership data is intentionally global (never site-scoped) per
+    // product decision — same memberships count on every site.
     let revenue = 0;
     try {
       const startDateTime = new Date(dateRange.startDate + 'T00:00:00').toISOString();
       const endDateTime = new Date(dateRange.endDate + 'T23:59:59').toISOString();
-      const siteId = currentSite?._id || currentSite?.siteId;
 
-      const revenueResponse = await apiService.getMembershipRevenue(startDateTime, endDateTime, siteId);
+      const revenueResponse = await apiService.getMembershipRevenue(startDateTime, endDateTime);
       if (revenueResponse.success) {
         revenue = revenueResponse.data.totalRevenue || 0;
       }
@@ -255,11 +256,10 @@ const Analytics = () => {
     try {
       const startDateTime = new Date(dateRange.startDate + 'T00:00:00').toISOString();
       const endDateTime = new Date(dateRange.endDate + 'T23:59:59').toISOString();
-      const siteId = currentSite?._id || currentSite?.siteId;
+      // Memberships are global, never site-scoped.
       const response = await apiService.getMembershipPayments({
         startDate: startDateTime,
         endDate: endDateTime,
-        siteId,
         limit: 100
       });
       setMembershipPayments(response.data?.payments || []);
@@ -470,7 +470,8 @@ const Analytics = () => {
         return matchesSearch && matchesPaymentMethod && matchesDeletedStatus;
       });
 
-      // Paginate every membership payment in the same date window
+      // Paginate every membership payment in the same date window.
+      // Membership data is intentionally global — no siteId filter.
       const membershipPayments = [];
       let mpPage = 1;
       let mpTotalPages = 1;
@@ -478,7 +479,6 @@ const Analytics = () => {
         const mpResp = await apiService.getMembershipPayments({
           startDate: startDateTime,
           endDate: endDateTime,
-          siteId,
           page: mpPage,
           limit: pageSize
         });

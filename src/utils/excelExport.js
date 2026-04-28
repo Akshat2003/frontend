@@ -130,8 +130,8 @@ function buildSummarySheet(workbook, bookings, memberships, siteName, siteId, fi
   sheet.addRow(['  (NOT included in the collected total above)']);
   sheet.addRow([]);
 
-  // Memberships
-  sheet.addRow(['MEMBERSHIP PURCHASES']).font = SECTION_FONT;
+  // Memberships — intentionally global, not scoped to the selected site.
+  sheet.addRow(['MEMBERSHIP PURCHASES (global — across all sites)']).font = SECTION_FONT;
   sheet.addRow([]);
   sheet.addRow(['Total purchases', memberships.length]);
   sheet.addRow(['Completed purchases', memberships.filter((m) => m.status === 'completed').length]);
