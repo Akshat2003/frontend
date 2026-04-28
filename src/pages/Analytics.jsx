@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Calendar,
   DollarSign,
@@ -65,6 +65,11 @@ const Analytics = () => {
 
   const { currentSite } = useSite();
   const { customers, getCustomers } = useCustomers();
+  // Bumped on every fetchAnalyticsData call. Stale invocations check this
+  // before touching state so a slower in-flight fetch can't overwrite the
+  // result of a newer one (e.g. when SiteContext upgrades currentSite from
+  // a partial object to the full site object during initial load).
+  const fetchIdRef = useRef(0);
   
   // Get current user for operator-specific filtering
   const getCurrentUser = () => {
@@ -150,6 +155,9 @@ const Analytics = () => {
   };
 
   const fetchAnalyticsData = async () => {
+    const fetchId = ++fetchIdRef.current;
+    const isCurrent = () => fetchId === fetchIdRef.current;
+
     setLoading(true);
     setLoadingProgress({ fetched: 0, total: null, phase: 'connecting' });
     setError(null);
@@ -176,6 +184,7 @@ const Analytics = () => {
             sortBy: 'createdAt',
             sortOrder: 'desc'
           });
+          if (!isCurrent()) return all; // a newer fetch superseded us
           const batch = resp.data?.bookings || [];
           all.push(...batch);
           totalPages = resp.data?.pagination?.totalPages || 1;
@@ -210,6 +219,8 @@ const Analytics = () => {
         dashboardResponse = dashResp;
       }
 
+      if (!isCurrent()) return;
+
       // Filter bookings by operator if not admin
       let operatorFilteredBookings = fetchedBookings;
       if (currentUser && currentUser.role !== 'admin') {
@@ -224,6 +235,8 @@ const Analytics = () => {
       // Membership analytics still come from a separate API
       setLoadingProgress((prev) => ({ ...prev, phase: 'memberships' }));
       const membershipAnalytics = await calculateMembershipAnalytics();
+      if (!isCurrent()) return;
+
       setAnalytics((prev) => ({
         ...prev,
         membershipSales: membershipAnalytics.count,
@@ -231,11 +244,18 @@ const Analytics = () => {
       }));
 
     } catch (error) {
-      console.error('Failed to fetch analytics:', error);
-      setError(error.message || 'Failed to load analytics data');
+      if (isCurrent()) {
+        console.error('Failed to fetch analytics:', error);
+        setError(error.message || 'Failed to load analytics data');
+      }
     } finally {
-      setLoading(false);
-      setLoadingProgress({ fetched: 0, total: null, phase: 'idle' });
+      // Only the most recent fetch is allowed to clear loading state. A
+      // stale fetch finishing here would otherwise hide the spinner while
+      // the active fetch is still running.
+      if (isCurrent()) {
+        setLoading(false);
+        setLoadingProgress({ fetched: 0, total: null, phase: 'idle' });
+      }
     }
   };
 
@@ -380,27 +400,67 @@ const Analytics = () => {
 
     try {
       const siteId = currentSite?._id || currentSite?.siteId;
-      
-      // Fetch all bookings for the site (no date or payment filter)
-      const response = await apiService.getBookings({
-        siteId,
-        limit: 10000, // Get all bookings
-        sortBy: 'createdAt',
-        sortOrder: 'desc'
+      const startDateTime = new Date(dateRange.startDate + 'T00:00:00').toISOString();
+      const endDateTime = new Date(dateRange.endDate + 'T23:59:59').toISOString();
+
+      // Paginate through every booking matching the date range + site so
+      // the PDF reflects the full dataset (mirrors the Excel export).
+      const pageSize = 500;
+      const allBookings = [];
+      let page = 1;
+      let totalPages = 1;
+      do {
+        const resp = await apiService.getBookings({
+          siteId,
+          dateFrom: startDateTime,
+          dateTo: endDateTime,
+          page,
+          limit: pageSize,
+          sortBy: 'createdAt',
+          sortOrder: 'desc'
+        });
+        const batch = resp.data?.bookings || [];
+        allBookings.push(...batch);
+        totalPages = resp.data?.pagination?.totalPages || 1;
+        page += 1;
+        if (batch.length === 0) break;
+      } while (page <= totalPages);
+
+      const isOperator = currentUser && currentUser.role !== 'admin';
+      const term = searchTerm.toLowerCase();
+      const exportBookings = allBookings.filter((booking) => {
+        if (isOperator && booking.operatorId !== currentUser.operatorId) return false;
+        const matchesSearch = !searchTerm || (
+          booking.vehicleNumber?.toLowerCase().includes(term) ||
+          booking.customerName?.toLowerCase().includes(term) ||
+          booking.phoneNumber?.includes(searchTerm) ||
+          booking.machineNumber?.toLowerCase().includes(term)
+        );
+        const matchesPaymentMethod = paymentMethodFilter === 'all' ||
+          booking.payment?.method === paymentMethodFilter ||
+          booking.paymentMethod === paymentMethodFilter;
+        const matchesDeletedStatus = showDeletedBookings
+          ? booking.status === 'deleted'
+          : booking.status !== 'deleted';
+        return matchesSearch && matchesPaymentMethod && matchesDeletedStatus;
       });
 
-      const allBookings = response.data?.bookings || [];
-      
-      if (allBookings.length === 0) {
-        setError('No bookings found for this site');
+      if (exportBookings.length === 0) {
+        setError('No bookings match the current filters');
         return;
       }
 
-      // Export to PDF
       exportBookingsToPDF(
-        allBookings, 
+        exportBookings,
         currentSite?.siteName || 'Unknown Site',
-        currentSite?.siteId || currentSite?._id || 'Unknown'
+        currentSite?.siteId || currentSite?._id || 'Unknown',
+        {
+          dateRange,
+          paymentMethod: paymentMethodFilter,
+          searchTerm: searchTerm || undefined,
+          showDeletedBookings,
+          operatorId: isOperator ? currentUser.operatorId : undefined
+        }
       );
 
     } catch (error) {
