@@ -50,6 +50,15 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
   const { deleteBooking } = useBookings();
   const { currentSite } = useSite();
 
+  // Only admins can delete bookings.
+  let isAdmin = false;
+  try {
+    const u = JSON.parse(localStorage.getItem('parkingOperator') || 'null');
+    isAdmin = u?.role === 'admin';
+  } catch {
+    isAdmin = false;
+  }
+
   // Get site-specific QR code
   const getSiteQRCode = () => {
     if (!currentSite) {
@@ -478,14 +487,16 @@ const BookingModal = ({ booking, isOpen, onClose, onComplete }) => {
 
       {/* Action Buttons */}
       <div className="space-y-3">
-        <Button 
-          onClick={() => setShowDeleteConfirm(true)}
-          variant="outline"
-          className="w-full border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400"
-        >
-          <Trash2 size={16} className="mr-2" />
-          Delete Booking
-        </Button>
+        {isAdmin && (
+          <Button
+            onClick={() => setShowDeleteConfirm(true)}
+            variant="outline"
+            className="w-full border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400"
+          >
+            <Trash2 size={16} className="mr-2" />
+            Delete Booking
+          </Button>
+        )}
         <div className="flex space-x-3">
           <Button variant="outline" onClick={handleClose} className="flex-1">
             Cancel

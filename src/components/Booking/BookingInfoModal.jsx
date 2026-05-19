@@ -29,6 +29,15 @@ const BookingInfoModal = ({ booking, isOpen, onClose }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const { deleteBooking } = useBookings();
 
+  // Only admins can delete bookings.
+  let isAdmin = false;
+  try {
+    const u = JSON.parse(localStorage.getItem('parkingOperator') || 'null');
+    isAdmin = u?.role === 'admin';
+  } catch {
+    isAdmin = false;
+  }
+
   if (!booking) return null;
 
   const handleDelete = async () => {
@@ -300,15 +309,17 @@ const BookingInfoModal = ({ booking, isOpen, onClose }) => {
 
         {/* Action Buttons */}
         <div className="pt-3 sm:pt-4 space-y-2 sm:space-y-3">
-          <Button 
-            onClick={() => setShowDeleteConfirm(true)}
-            variant="outline"
-            className="w-full border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400 text-sm py-2.5"
-            size="sm"
-          >
-            <Trash2 size={14} className="mr-2" />
-            Delete Booking
-          </Button>
+          {isAdmin && (
+            <Button
+              onClick={() => setShowDeleteConfirm(true)}
+              variant="outline"
+              className="w-full border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400 text-sm py-2.5"
+              size="sm"
+            >
+              <Trash2 size={14} className="mr-2" />
+              Delete Booking
+            </Button>
+          )}
           <Button onClick={onClose} className="w-full text-sm py-2.5" size="sm">
             <CheckCircle2 size={14} className="mr-2" />
             Close Information
