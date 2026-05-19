@@ -195,6 +195,7 @@ class ApiService {
     if (filters.limit) queryParams.append('limit', filters.limit);
     if (filters.status) queryParams.append('status', filters.status);
     if (filters.statusNot) queryParams.append('statusNot', filters.statusNot);
+    if (filters.paymentMethod) queryParams.append('paymentMethod', filters.paymentMethod);
     if (filters.machineNumber) queryParams.append('machineNumber', filters.machineNumber);
     if (filters.vehicleNumber) queryParams.append('vehicleNumber', filters.vehicleNumber);
     if (filters.search) queryParams.append('search', filters.search);

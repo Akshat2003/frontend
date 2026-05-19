@@ -193,7 +193,8 @@ const Analytics = () => {
         limit: TABLE_PAGE_SIZE,
         sortBy: 'createdAt',
         sortOrder: 'desc',
-        ...statusFilter
+        ...statusFilter,
+        ...(paymentMethodFilter !== 'all' ? { paymentMethod: paymentMethodFilter } : {})
       });
       const fetched = resp.data?.bookings || [];
       const isOperator = currentUser && currentUser.role !== 'admin';
@@ -245,7 +246,8 @@ const Analytics = () => {
           limit: TABLE_PAGE_SIZE,
           sortBy: 'createdAt',
           sortOrder: 'desc',
-          ...(showDeletedBookings ? { status: 'deleted' } : { statusNot: 'deleted' })
+          ...(showDeletedBookings ? { status: 'deleted' } : { statusNot: 'deleted' }),
+          ...(paymentMethodFilter !== 'all' ? { paymentMethod: paymentMethodFilter } : {})
         }),
         calculateMembershipAnalytics()
       ]);
@@ -790,21 +792,19 @@ const Analytics = () => {
   };
 
   // Filter bookings based on search term, payment method, and deleted status
-  // Server already applies the deleted toggle (status / statusNot). Search
-  // and payment method remain client-side and only narrow the current page.
-  const filteredBookings = bookings.filter(booking => {
-    const matchesSearch = !searchTerm || (
-      booking.vehicleNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      booking.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  // Server already applies the deleted toggle (status/statusNot) and the
+  // payment method filter, so the table response is already scoped.
+  // Search is the only client-side narrowing left and only affects the
+  // current page.
+  const filteredBookings = bookings.filter((booking) => {
+    if (!searchTerm) return true;
+    const term = searchTerm.toLowerCase();
+    return (
+      booking.vehicleNumber?.toLowerCase().includes(term) ||
+      booking.customerName?.toLowerCase().includes(term) ||
       booking.phoneNumber?.includes(searchTerm) ||
-      booking.machineNumber?.toLowerCase().includes(searchTerm.toLowerCase())
+      booking.machineNumber?.toLowerCase().includes(term)
     );
-
-    const matchesPaymentMethod = paymentMethodFilter === 'all' ||
-      booking.payment?.method === paymentMethodFilter ||
-      booking.paymentMethod === paymentMethodFilter;
-
-    return matchesSearch && matchesPaymentMethod;
   });
 
   const getStatusBadgeClass = (status) => {
