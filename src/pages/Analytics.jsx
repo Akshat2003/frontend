@@ -93,13 +93,15 @@ const Analytics = () => {
 
   // Refetch summary + table whenever any of the inputs change. Each call
   // is cheap: a single Mongo aggregation for the summary and one capped
-  // getBookings request for the table. The deleted toggle only affects
-  // the on-screen table filter, not the summary or fetch.
+  // getBookings request for the table. The deleted toggle is pushed to
+  // the server now, so flipping it must trigger a refetch (the table
+  // shows EITHER non-deleted bookings OR deleted-only depending on the
+  // toggle, never a mix).
   useEffect(() => {
     if (currentSite?._id || currentSite?.siteId) {
       fetchAnalyticsData();
     }
-  }, [dateRange, currentSite, paymentMethodFilter]);
+  }, [dateRange, currentSite, paymentMethodFilter, showDeletedBookings]);
 
   // Fetch customers data for membership analytics
   useEffect(() => {
@@ -178,6 +180,11 @@ const Analytics = () => {
       const siteId = currentSite?._id || currentSite?.siteId;
       const startDateTime = new Date(dateRange.startDate + 'T00:00:00').toISOString();
       const endDateTime = new Date(dateRange.endDate + 'T23:59:59').toISOString();
+      // Push the "Show Deleted" toggle to the server so pagination
+      // counts/pages match the dataset the user expects to see.
+      const statusFilter = showDeletedBookings
+        ? { status: 'deleted' }
+        : { statusNot: 'deleted' };
       const resp = await apiService.getBookings({
         siteId,
         dateFrom: startDateTime,
@@ -185,7 +192,8 @@ const Analytics = () => {
         page,
         limit: TABLE_PAGE_SIZE,
         sortBy: 'createdAt',
-        sortOrder: 'desc'
+        sortOrder: 'desc',
+        ...statusFilter
       });
       const fetched = resp.data?.bookings || [];
       const isOperator = currentUser && currentUser.role !== 'admin';
@@ -236,7 +244,8 @@ const Analytics = () => {
           page: 1,
           limit: TABLE_PAGE_SIZE,
           sortBy: 'createdAt',
-          sortOrder: 'desc'
+          sortOrder: 'desc',
+          ...(showDeletedBookings ? { status: 'deleted' } : { statusNot: 'deleted' })
         }),
         calculateMembershipAnalytics()
       ]);
@@ -781,8 +790,9 @@ const Analytics = () => {
   };
 
   // Filter bookings based on search term, payment method, and deleted status
+  // Server already applies the deleted toggle (status / statusNot). Search
+  // and payment method remain client-side and only narrow the current page.
   const filteredBookings = bookings.filter(booking => {
-    // Search filter
     const matchesSearch = !searchTerm || (
       booking.vehicleNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       booking.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -790,17 +800,11 @@ const Analytics = () => {
       booking.machineNumber?.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    // Payment method filter
     const matchesPaymentMethod = paymentMethodFilter === 'all' ||
       booking.payment?.method === paymentMethodFilter ||
       booking.paymentMethod === paymentMethodFilter;
 
-    // Deleted status filter
-    const matchesDeletedStatus = showDeletedBookings
-      ? booking.status === 'deleted'
-      : booking.status !== 'deleted';
-
-    return matchesSearch && matchesPaymentMethod && matchesDeletedStatus;
+    return matchesSearch && matchesPaymentMethod;
   });
 
   const getStatusBadgeClass = (status) => {
