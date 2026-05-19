@@ -26,6 +26,7 @@ import Button from '../components/Common/Button';
 import { formatCurrency } from '../utils/calculations';
 import { exportBookingsToPDF } from '../utils/pdfExport';
 import { exportBookingsToExcel } from '../utils/excelExport';
+import { exportMonthlyAnalytics } from '../utils/monthlyExport';
 import apiService from '../services/api';
 import { useSite } from '../contexts/SiteContext';
 import { useCustomers } from '../hooks/useCustomers';
@@ -57,6 +58,7 @@ const Analytics = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [exportLoading, setExportLoading] = useState(false);
   const [excelExportLoading, setExcelExportLoading] = useState(false);
+  const [monthlyExportLoading, setMonthlyExportLoading] = useState(false);
   const [showDeletedBookings, setShowDeletedBookings] = useState(false);
   const [showMembershipModal, setShowMembershipModal] = useState(false);
   const [membershipPayments, setMembershipPayments] = useState([]);
@@ -478,6 +480,86 @@ const Analytics = () => {
     }
   };
 
+  const handleMonthlyExport = async () => {
+    if (!currentSite?._id && !currentSite?.siteId) {
+      setError('No site selected for export');
+      return;
+    }
+
+    setMonthlyExportLoading(true);
+    setError(null);
+
+    try {
+      const siteId = currentSite?._id || currentSite?.siteId;
+      const startDateTime = new Date(dateRange.startDate + 'T00:00:00').toISOString();
+      const endDateTime = new Date(dateRange.endDate + 'T23:59:59').toISOString();
+      const pageSize = 500;
+
+      // Paginate every booking in the window for the selected site.
+      const allBookings = [];
+      let page = 1;
+      let totalPages = 1;
+      do {
+        const resp = await apiService.getBookings({
+          siteId,
+          dateFrom: startDateTime,
+          dateTo: endDateTime,
+          page,
+          limit: pageSize,
+          sortBy: 'createdAt',
+          sortOrder: 'desc'
+        });
+        const batch = resp.data?.bookings || [];
+        allBookings.push(...batch);
+        totalPages = resp.data?.pagination?.totalPages || 1;
+        page += 1;
+        if (batch.length === 0) break;
+      } while (page <= totalPages);
+
+      // Operator scoping (admin sees everything)
+      const isOperator = currentUser && currentUser.role !== 'admin';
+      const bookingsForReport = isOperator
+        ? allBookings.filter((b) => b.operatorId === currentUser.operatorId)
+        : allBookings;
+
+      // Memberships — global, never site-scoped
+      const memberships = [];
+      let mpPage = 1;
+      let mpTotalPages = 1;
+      do {
+        const mpResp = await apiService.getMembershipPayments({
+          startDate: startDateTime,
+          endDate: endDateTime,
+          page: mpPage,
+          limit: pageSize
+        });
+        const batch = mpResp.data?.payments || [];
+        memberships.push(...batch);
+        mpTotalPages = mpResp.data?.pagination?.totalPages || 1;
+        mpPage += 1;
+        if (batch.length === 0) break;
+      } while (mpPage <= mpTotalPages);
+
+      if (bookingsForReport.length === 0 && memberships.length === 0) {
+        setError('No data in the selected window');
+        return;
+      }
+
+      await exportMonthlyAnalytics({
+        bookings: bookingsForReport,
+        memberships,
+        siteName: currentSite?.siteName || 'Unknown Site',
+        siteId: currentSite?.siteId || currentSite?._id || '',
+        dateRange
+      });
+    } catch (error) {
+      console.error('Monthly export failed:', error);
+      setError(error.message || 'Failed to export monthly analytics');
+    } finally {
+      setMonthlyExportLoading(false);
+    }
+  };
+
   const handleExcelExport = async () => {
     if (!currentSite?._id && !currentSite?.siteId) {
       setError('No site selected for export');
@@ -660,6 +742,21 @@ const Analytics = () => {
             )}
             <span className="ml-2">
               {excelExportLoading ? 'Exporting...' : 'Export Excel'}
+            </span>
+          </Button>
+
+          <Button
+            onClick={handleMonthlyExport}
+            disabled={monthlyExportLoading || !currentSite}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white"
+          >
+            {monthlyExportLoading ? (
+              <RefreshCw className="animate-spin" size={16} />
+            ) : (
+              <Download size={16} />
+            )}
+            <span className="ml-2">
+              {monthlyExportLoading ? 'Exporting...' : 'Monthly Analytics'}
             </span>
           </Button>
         </div>
