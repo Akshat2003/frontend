@@ -1193,6 +1193,58 @@ const Analytics = () => {
           )}
         </div>
 
+        {/* Pagination controls — placed at the top of the table for quick access */}
+        {bookingsTablePagination && bookingsTablePagination.totalPages > 1 && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 md:p-4 border-b border-gray-200 bg-gray-50">
+            <div className="text-xs text-gray-500">
+              Page {bookingsTablePagination.currentPage} of {bookingsTablePagination.totalPages}
+              {tableLoading && (
+                <span className="ml-2 inline-flex items-center">
+                  <RefreshCw className="animate-spin" size={12} />
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => handleTablePageChange(1)}
+                disabled={tableLoading || !bookingsTablePagination.hasPrevPage}
+                variant="outline"
+                size="sm"
+              >
+                First
+              </Button>
+              <Button
+                onClick={() => handleTablePageChange(Math.max(1, tablePage - 1))}
+                disabled={tableLoading || !bookingsTablePagination.hasPrevPage}
+                variant="outline"
+                size="sm"
+              >
+                Prev
+              </Button>
+              <Button
+                onClick={() =>
+                  handleTablePageChange(
+                    Math.min(bookingsTablePagination.totalPages, tablePage + 1)
+                  )
+                }
+                disabled={tableLoading || !bookingsTablePagination.hasNextPage}
+                variant="outline"
+                size="sm"
+              >
+                Next
+              </Button>
+              <Button
+                onClick={() => handleTablePageChange(bookingsTablePagination.totalPages)}
+                disabled={tableLoading || !bookingsTablePagination.hasNextPage}
+                variant="outline"
+                size="sm"
+              >
+                Last
+              </Button>
+            </div>
+          </div>
+        )}
+
         {loading ? (
           <div className="p-6 md:p-8 text-center">
             <div className="animate-spin rounded-full h-6 w-6 md:h-8 md:w-8 border-b-2 border-purple-600 mx-auto mb-4"></div>
@@ -1367,57 +1419,6 @@ const Analytics = () => {
           </div>
         )}
 
-        {/* Pagination controls — server-side paginated bookings table */}
-        {bookingsTablePagination && bookingsTablePagination.totalPages > 1 && (
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 md:p-4 border-t border-gray-200">
-            <div className="text-xs text-gray-500">
-              Page {bookingsTablePagination.currentPage} of {bookingsTablePagination.totalPages}
-              {tableLoading && (
-                <span className="ml-2 inline-flex items-center">
-                  <RefreshCw className="animate-spin" size={12} />
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                onClick={() => handleTablePageChange(1)}
-                disabled={tableLoading || !bookingsTablePagination.hasPrevPage}
-                variant="outline"
-                size="sm"
-              >
-                First
-              </Button>
-              <Button
-                onClick={() => handleTablePageChange(Math.max(1, tablePage - 1))}
-                disabled={tableLoading || !bookingsTablePagination.hasPrevPage}
-                variant="outline"
-                size="sm"
-              >
-                Prev
-              </Button>
-              <Button
-                onClick={() =>
-                  handleTablePageChange(
-                    Math.min(bookingsTablePagination.totalPages, tablePage + 1)
-                  )
-                }
-                disabled={tableLoading || !bookingsTablePagination.hasNextPage}
-                variant="outline"
-                size="sm"
-              >
-                Next
-              </Button>
-              <Button
-                onClick={() => handleTablePageChange(bookingsTablePagination.totalPages)}
-                disabled={tableLoading || !bookingsTablePagination.hasNextPage}
-                variant="outline"
-                size="sm"
-              >
-                Last
-              </Button>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Booking Information Modal */}
