@@ -59,6 +59,9 @@ const Analytics = () => {
   const [exportLoading, setExportLoading] = useState(false);
   const [excelExportLoading, setExcelExportLoading] = useState(false);
   const [monthlyExportLoading, setMonthlyExportLoading] = useState(false);
+  // null when no export is running; otherwise { kind, pct, label } where
+  // kind ∈ 'PDF' | 'Excel' | 'Monthly Analytics'
+  const [exportProgress, setExportProgress] = useState(null);
   const [showDeletedBookings, setShowDeletedBookings] = useState(false);
   const [showMembershipModal, setShowMembershipModal] = useState(false);
   const [membershipPayments, setMembershipPayments] = useState([]);
@@ -389,37 +392,41 @@ const Analytics = () => {
 
     setExportLoading(true);
     setError(null);
+    const KIND = 'PDF';
+    setProgress(KIND, phasePct.connecting, 'Preparing PDF…');
 
     try {
       const siteId = currentSite?._id || currentSite?.siteId;
       const startDateTime = new Date(dateRange.startDate + 'T00:00:00').toISOString();
       const endDateTime = new Date(dateRange.endDate + 'T23:59:59').toISOString();
 
-      // Paginate through every booking matching the date range + site so
-      // the PDF reflects the full dataset (mirrors the Excel export).
-      const pageSize = 500;
-      const allBookings = [];
-      let page = 1;
-      let totalPages = 1;
-      do {
-        const resp = await apiService.getBookings({
-          siteId,
-          dateFrom: startDateTime,
-          dateTo: endDateTime,
-          page,
-          limit: pageSize,
-          sortBy: 'createdAt',
-          sortOrder: 'desc'
-        });
-        const batch = resp.data?.bookings || [];
-        allBookings.push(...batch);
-        totalPages = resp.data?.pagination?.totalPages || 1;
-        page += 1;
-        if (batch.length === 0) break;
-      } while (page <= totalPages);
+      const allBookings = await paginatedFetch(
+        async (page, limit) => {
+          const resp = await apiService.getBookings({
+            siteId,
+            dateFrom: startDateTime,
+            dateTo: endDateTime,
+            page,
+            limit,
+            sortBy: 'createdAt',
+            sortOrder: 'desc'
+          });
+          return {
+            items: resp.data?.bookings || [],
+            totalPages: resp.data?.pagination?.totalPages,
+            totalItems: resp.data?.pagination?.totalItems
+          };
+        },
+        {
+          kind: KIND,
+          label: 'Loading bookings',
+          pctFrom: phasePct.bookingsStart,
+          pctTo: phasePct.bookingsEnd
+        }
+      );
 
-      // Don't filter on the deleted toggle — see comment in handleExcelExport.
-      // The PDF summary needs cancelled/deleted rows to report their revenue.
+      // Don't filter on the deleted toggle — the PDF summary needs cancelled
+      // and deleted rows to report their revenue separately.
       const isOperator = currentUser && currentUser.role !== 'admin';
       const term = searchTerm.toLowerCase();
       const exportBookings = allBookings.filter((booking) => {
@@ -441,24 +448,29 @@ const Analytics = () => {
         return;
       }
 
-      // Memberships are global — fetch them in parallel for the PDF stats.
-      const membershipPaymentsForPdf = [];
-      let mpPage = 1;
-      let mpTotalPages = 1;
-      do {
-        const mpResp = await apiService.getMembershipPayments({
-          startDate: startDateTime,
-          endDate: endDateTime,
-          page: mpPage,
-          limit: 500
-        });
-        const mpBatch = mpResp.data?.payments || [];
-        membershipPaymentsForPdf.push(...mpBatch);
-        mpTotalPages = mpResp.data?.pagination?.totalPages || 1;
-        mpPage += 1;
-        if (mpBatch.length === 0) break;
-      } while (mpPage <= mpTotalPages);
+      const membershipPaymentsForPdf = await paginatedFetch(
+        async (page, limit) => {
+          const resp = await apiService.getMembershipPayments({
+            startDate: startDateTime,
+            endDate: endDateTime,
+            page,
+            limit
+          });
+          return {
+            items: resp.data?.payments || [],
+            totalPages: resp.data?.pagination?.totalPages,
+            totalItems: resp.data?.pagination?.totalItems
+          };
+        },
+        {
+          kind: KIND,
+          label: 'Loading memberships',
+          pctFrom: phasePct.membershipsStart,
+          pctTo: phasePct.membershipsEnd
+        }
+      );
 
+      setProgress(KIND, phasePct.generating, 'Generating PDF…');
       exportBookingsToPDF(
         exportBookings,
         currentSite?.siteName || 'Unknown Site',
@@ -477,7 +489,54 @@ const Analytics = () => {
       setError(error.message || 'Failed to export data');
     } finally {
       setExportLoading(false);
+      clearProgress();
     }
+  };
+
+  // Shared progress helpers for the three export handlers. Each export
+  // moves through these phases:
+  //   1. connecting   (start, before first response)        →   5%
+  //   2. bookings     (paginating bookings)                 → 10..70%
+  //   3. memberships  (paginating membership payments)      → 70..90%
+  //   4. generating   (building the file in the browser)    → 90..99%
+  //   5. done                                               → null
+  const phasePct = {
+    connecting: 5,
+    bookingsStart: 10,
+    bookingsEnd: 70,
+    membershipsStart: 70,
+    membershipsEnd: 90,
+    generating: 95
+  };
+  const setProgress = (kind, pct, label) => setExportProgress({ kind, pct, label });
+  const clearProgress = () => setExportProgress(null);
+
+  // Paginates a fetcher; updates progress in a scaled range. fetcher(page)
+  // must return { items, totalPages, totalItems }.
+  const paginatedFetch = async (fetcher, { kind, label, pctFrom, pctTo, pageSize = 500 }) => {
+    const all = [];
+    let page = 1;
+    let totalPages = 1;
+    let totalItems = null;
+    do {
+      const { items, totalPages: tp, totalItems: ti } = await fetcher(page, pageSize);
+      all.push(...items);
+      totalPages = tp || 1;
+      if (totalItems === null) totalItems = ti ?? all.length;
+      const pct = totalItems > 0
+        ? pctFrom + ((all.length / totalItems) * (pctTo - pctFrom))
+        : pctTo;
+      setProgress(
+        kind,
+        Math.min(pctTo, pct),
+        totalItems > 0
+          ? `${label}: ${all.length.toLocaleString()} of ${totalItems.toLocaleString()}`
+          : label
+      );
+      page += 1;
+      if (items.length === 0) break;
+    } while (page <= totalPages);
+    return all;
   };
 
   const handleMonthlyExport = async () => {
@@ -488,63 +547,72 @@ const Analytics = () => {
 
     setMonthlyExportLoading(true);
     setError(null);
+    const KIND = 'Monthly Analytics';
+    setProgress(KIND, phasePct.connecting, 'Preparing export…');
 
     try {
       const siteId = currentSite?._id || currentSite?.siteId;
       const startDateTime = new Date(dateRange.startDate + 'T00:00:00').toISOString();
       const endDateTime = new Date(dateRange.endDate + 'T23:59:59').toISOString();
-      const pageSize = 500;
 
-      // Paginate every booking in the window for the selected site.
-      const allBookings = [];
-      let page = 1;
-      let totalPages = 1;
-      do {
-        const resp = await apiService.getBookings({
-          siteId,
-          dateFrom: startDateTime,
-          dateTo: endDateTime,
-          page,
-          limit: pageSize,
-          sortBy: 'createdAt',
-          sortOrder: 'desc'
-        });
-        const batch = resp.data?.bookings || [];
-        allBookings.push(...batch);
-        totalPages = resp.data?.pagination?.totalPages || 1;
-        page += 1;
-        if (batch.length === 0) break;
-      } while (page <= totalPages);
+      const allBookings = await paginatedFetch(
+        async (page, limit) => {
+          const resp = await apiService.getBookings({
+            siteId,
+            dateFrom: startDateTime,
+            dateTo: endDateTime,
+            page,
+            limit,
+            sortBy: 'createdAt',
+            sortOrder: 'desc'
+          });
+          return {
+            items: resp.data?.bookings || [],
+            totalPages: resp.data?.pagination?.totalPages,
+            totalItems: resp.data?.pagination?.totalItems
+          };
+        },
+        {
+          kind: KIND,
+          label: 'Loading bookings',
+          pctFrom: phasePct.bookingsStart,
+          pctTo: phasePct.bookingsEnd
+        }
+      );
 
-      // Operator scoping (admin sees everything)
       const isOperator = currentUser && currentUser.role !== 'admin';
       const bookingsForReport = isOperator
         ? allBookings.filter((b) => b.operatorId === currentUser.operatorId)
         : allBookings;
 
-      // Memberships — global, never site-scoped
-      const memberships = [];
-      let mpPage = 1;
-      let mpTotalPages = 1;
-      do {
-        const mpResp = await apiService.getMembershipPayments({
-          startDate: startDateTime,
-          endDate: endDateTime,
-          page: mpPage,
-          limit: pageSize
-        });
-        const batch = mpResp.data?.payments || [];
-        memberships.push(...batch);
-        mpTotalPages = mpResp.data?.pagination?.totalPages || 1;
-        mpPage += 1;
-        if (batch.length === 0) break;
-      } while (mpPage <= mpTotalPages);
+      const memberships = await paginatedFetch(
+        async (page, limit) => {
+          const resp = await apiService.getMembershipPayments({
+            startDate: startDateTime,
+            endDate: endDateTime,
+            page,
+            limit
+          });
+          return {
+            items: resp.data?.payments || [],
+            totalPages: resp.data?.pagination?.totalPages,
+            totalItems: resp.data?.pagination?.totalItems
+          };
+        },
+        {
+          kind: KIND,
+          label: 'Loading memberships',
+          pctFrom: phasePct.membershipsStart,
+          pctTo: phasePct.membershipsEnd
+        }
+      );
 
       if (bookingsForReport.length === 0 && memberships.length === 0) {
         setError('No data in the selected window');
         return;
       }
 
+      setProgress(KIND, phasePct.generating, 'Generating workbook…');
       await exportMonthlyAnalytics({
         bookings: bookingsForReport,
         memberships,
@@ -557,6 +625,7 @@ const Analytics = () => {
       setError(error.message || 'Failed to export monthly analytics');
     } finally {
       setMonthlyExportLoading(false);
+      clearProgress();
     }
   };
 
@@ -568,39 +637,42 @@ const Analytics = () => {
 
     setExcelExportLoading(true);
     setError(null);
+    const KIND = 'Excel';
+    setProgress(KIND, phasePct.connecting, 'Preparing Excel…');
 
     try {
       const siteId = currentSite?._id || currentSite?.siteId;
       const startDateTime = new Date(dateRange.startDate + 'T00:00:00').toISOString();
       const endDateTime = new Date(dateRange.endDate + 'T23:59:59').toISOString();
 
-      // Paginate through every booking matching the date range + site
-      const pageSize = 500;
-      const allBookings = [];
-      let page = 1;
-      let totalPages = 1;
-      do {
-        const resp = await apiService.getBookings({
-          siteId,
-          dateFrom: startDateTime,
-          dateTo: endDateTime,
-          page,
-          limit: pageSize,
-          sortBy: 'createdAt',
-          sortOrder: 'desc'
-        });
-        const batch = resp.data?.bookings || [];
-        allBookings.push(...batch);
-        totalPages = resp.data?.pagination?.totalPages || 1;
-        page += 1;
-        if (batch.length === 0) break;
-      } while (page <= totalPages);
+      const allBookings = await paginatedFetch(
+        async (page, limit) => {
+          const resp = await apiService.getBookings({
+            siteId,
+            dateFrom: startDateTime,
+            dateTo: endDateTime,
+            page,
+            limit,
+            sortBy: 'createdAt',
+            sortOrder: 'desc'
+          });
+          return {
+            items: resp.data?.bookings || [],
+            totalPages: resp.data?.pagination?.totalPages,
+            totalItems: resp.data?.pagination?.totalItems
+          };
+        },
+        {
+          kind: KIND,
+          label: 'Loading bookings',
+          pctFrom: phasePct.bookingsStart,
+          pctTo: phasePct.bookingsEnd
+        }
+      );
 
-      // Filter to mirror the relevant dashboard filters. Note we deliberately
-      // do NOT filter on the deleted toggle here — the export needs cancelled
-      // and deleted rows so the summary's separate revenue figures for those
-      // statuses are computed correctly. Bookings rows still carry a status
-      // column so they're easy to identify.
+      // Don't filter on the deleted toggle — the summary needs cancelled and
+      // deleted rows to report their revenue separately. Bookings sheet still
+      // carries the status column so they're easy to identify.
       const isOperator = currentUser && currentUser.role !== 'admin';
       const term = searchTerm.toLowerCase();
       const exportBookings = allBookings.filter((booking) => {
@@ -617,30 +689,35 @@ const Analytics = () => {
         return matchesSearch && matchesPaymentMethod;
       });
 
-      // Paginate every membership payment in the same date window.
-      // Membership data is intentionally global — no siteId filter.
-      const membershipPayments = [];
-      let mpPage = 1;
-      let mpTotalPages = 1;
-      do {
-        const mpResp = await apiService.getMembershipPayments({
-          startDate: startDateTime,
-          endDate: endDateTime,
-          page: mpPage,
-          limit: pageSize
-        });
-        const mpBatch = mpResp.data?.payments || [];
-        membershipPayments.push(...mpBatch);
-        mpTotalPages = mpResp.data?.pagination?.totalPages || 1;
-        mpPage += 1;
-        if (mpBatch.length === 0) break;
-      } while (mpPage <= mpTotalPages);
+      // Memberships are global, never site-scoped.
+      const membershipPayments = await paginatedFetch(
+        async (page, limit) => {
+          const resp = await apiService.getMembershipPayments({
+            startDate: startDateTime,
+            endDate: endDateTime,
+            page,
+            limit
+          });
+          return {
+            items: resp.data?.payments || [],
+            totalPages: resp.data?.pagination?.totalPages,
+            totalItems: resp.data?.pagination?.totalItems
+          };
+        },
+        {
+          kind: KIND,
+          label: 'Loading memberships',
+          pctFrom: phasePct.membershipsStart,
+          pctTo: phasePct.membershipsEnd
+        }
+      );
 
       if (exportBookings.length === 0 && membershipPayments.length === 0) {
         setError('No bookings or membership payments match the current filters');
         return;
       }
 
+      setProgress(KIND, phasePct.generating, 'Generating workbook…');
       await exportBookingsToExcel(
         exportBookings,
         currentSite?.siteName || 'Unknown Site',
@@ -658,6 +735,7 @@ const Analytics = () => {
       setError(error.message || 'Failed to export Excel file');
     } finally {
       setExcelExportLoading(false);
+      clearProgress();
     }
   };
 
@@ -761,6 +839,30 @@ const Analytics = () => {
           </Button>
         </div>
       </div>
+
+      {/* Export progress bar — shows while any of the three exports is running */}
+      {exportProgress && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 md:p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center space-x-2">
+              <RefreshCw className="text-purple-600 animate-spin" size={16} />
+              <span className="text-sm font-medium text-gray-700">
+                Exporting {exportProgress.kind}…
+              </span>
+            </div>
+            <span className="text-sm font-medium text-gray-700">
+              {Math.round(exportProgress.pct)}%
+            </span>
+          </div>
+          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-purple-600 transition-all duration-300 ease-out"
+              style={{ width: `${exportProgress.pct}%` }}
+            />
+          </div>
+          <p className="text-xs text-gray-500 mt-2">{exportProgress.label}</p>
+        </div>
+      )}
 
       {/* Date Range Picker & Filters */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-3 md:p-4">
