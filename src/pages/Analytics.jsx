@@ -54,6 +54,8 @@ const Analytics = () => {
   const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [bookingsTablePagination, setBookingsTablePagination] = useState(null);
+  const [tablePage, setTablePage] = useState(1);
+  const [tableLoading, setTableLoading] = useState(false);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [exportLoading, setExportLoading] = useState(false);
@@ -161,10 +163,48 @@ const Analytics = () => {
     return { count, revenue };
   };
 
-  // Used by the bookings table at the bottom of the page. We cap visible
-  // rows so a wide date range can't render 16k+ DOM rows; cards above
-  // come from a server-side aggregate and reflect the FULL dataset.
-  const TABLE_LIMIT = 1000;
+  // Bookings table uses server-side pagination so the user can scroll
+  // through every booking. 100 rows per page keeps the DOM light.
+  const TABLE_PAGE_SIZE = 100;
+
+  // Fetch one page of bookings for the on-screen table. Used both by
+  // fetchAnalyticsData (initial / filter change) and the Prev/Next
+  // pagination buttons. Sets tableLoading so the table can show its
+  // own spinner without dimming the cards above.
+  const fetchBookingsTablePage = async (page) => {
+    if (!currentSite?._id && !currentSite?.siteId) return;
+    setTableLoading(true);
+    try {
+      const siteId = currentSite?._id || currentSite?.siteId;
+      const startDateTime = new Date(dateRange.startDate + 'T00:00:00').toISOString();
+      const endDateTime = new Date(dateRange.endDate + 'T23:59:59').toISOString();
+      const resp = await apiService.getBookings({
+        siteId,
+        dateFrom: startDateTime,
+        dateTo: endDateTime,
+        page,
+        limit: TABLE_PAGE_SIZE,
+        sortBy: 'createdAt',
+        sortOrder: 'desc'
+      });
+      const fetched = resp.data?.bookings || [];
+      const isOperator = currentUser && currentUser.role !== 'admin';
+      const scoped = isOperator
+        ? fetched.filter((b) => b.operatorId === currentUser.operatorId)
+        : fetched;
+      setBookings(scoped);
+      setBookingsTablePagination(resp.data?.pagination || null);
+    } catch (err) {
+      console.error('Failed to fetch bookings page:', err);
+    } finally {
+      setTableLoading(false);
+    }
+  };
+
+  const handleTablePageChange = (newPage) => {
+    setTablePage(newPage);
+    fetchBookingsTablePage(newPage);
+  };
 
   const fetchAnalyticsData = async () => {
     const fetchId = ++fetchIdRef.current;
@@ -178,11 +218,10 @@ const Analytics = () => {
       const startDateTime = new Date(dateRange.startDate + 'T00:00:00').toISOString();
       const endDateTime = new Date(dateRange.endDate + 'T23:59:59').toISOString();
 
-      // Two cheap calls in parallel:
-      //   1. Aggregate summary endpoint — returns totals for the cards
-      //      (counts + collected revenue) computed server-side. No row
-      //      transfer, fixed-size response.
-      //   2. A paginated row fetch (capped) for the on-screen table.
+      // Three cheap calls in parallel:
+      //   1. Aggregate summary endpoint — fixed-size response, drives cards.
+      //   2. Page 1 of the bookings table (server-paginated).
+      //   3. Membership analytics for the membership cards.
       const [summaryResp, bookingsResp, membershipAnalytics] = await Promise.all([
         apiService.getBookingSummary({
           siteId,
@@ -194,7 +233,8 @@ const Analytics = () => {
           siteId,
           dateFrom: startDateTime,
           dateTo: endDateTime,
-          limit: TABLE_LIMIT,
+          page: 1,
+          limit: TABLE_PAGE_SIZE,
           sortBy: 'createdAt',
           sortOrder: 'desc'
         }),
@@ -212,6 +252,7 @@ const Analytics = () => {
       }
       setBookings(operatorFilteredBookings);
       setBookingsTablePagination(bookingsResp?.data?.pagination || null);
+      setTablePage(1);
 
       const summary = summaryResp?.data || {};
       setAnalytics({
@@ -1134,15 +1175,18 @@ const Analytics = () => {
               </span>
             </div>
           </div>
-          {bookingsTablePagination &&
-            bookingsTablePagination.totalItems > bookingsTablePagination.itemsPerPage && (
-              <p className="text-xs text-gray-500 mt-2">
-                Showing the {bookingsTablePagination.itemsPerPage.toLocaleString()} most recent of{' '}
-                {bookingsTablePagination.totalItems.toLocaleString()} matching bookings. The cards
-                above reflect every booking in the selected range — use Excel export to download
-                them all.
-              </p>
-            )}
+          {bookingsTablePagination && bookingsTablePagination.totalItems > 0 && (
+            <p className="text-xs text-gray-500 mt-2">
+              Showing{' '}
+              {(((bookingsTablePagination.currentPage || 1) - 1) * (bookingsTablePagination.itemsPerPage || TABLE_PAGE_SIZE) + 1).toLocaleString()}
+              –
+              {Math.min(
+                (bookingsTablePagination.currentPage || 1) * (bookingsTablePagination.itemsPerPage || TABLE_PAGE_SIZE),
+                bookingsTablePagination.totalItems
+              ).toLocaleString()}{' '}
+              of {bookingsTablePagination.totalItems.toLocaleString()} bookings.
+            </p>
+          )}
         </div>
 
         {loading ? (
@@ -1316,6 +1360,58 @@ const Analytics = () => {
             <p className="text-sm text-gray-400">
               {searchTerm ? 'Try adjusting your search criteria' : 'No bookings for the selected date range'}
             </p>
+          </div>
+        )}
+
+        {/* Pagination controls — server-side paginated bookings table */}
+        {bookingsTablePagination && bookingsTablePagination.totalPages > 1 && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 md:p-4 border-t border-gray-200">
+            <div className="text-xs text-gray-500">
+              Page {bookingsTablePagination.currentPage} of {bookingsTablePagination.totalPages}
+              {tableLoading && (
+                <span className="ml-2 inline-flex items-center">
+                  <RefreshCw className="animate-spin" size={12} />
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => handleTablePageChange(1)}
+                disabled={tableLoading || !bookingsTablePagination.hasPrevPage}
+                variant="outline"
+                size="sm"
+              >
+                First
+              </Button>
+              <Button
+                onClick={() => handleTablePageChange(Math.max(1, tablePage - 1))}
+                disabled={tableLoading || !bookingsTablePagination.hasPrevPage}
+                variant="outline"
+                size="sm"
+              >
+                Prev
+              </Button>
+              <Button
+                onClick={() =>
+                  handleTablePageChange(
+                    Math.min(bookingsTablePagination.totalPages, tablePage + 1)
+                  )
+                }
+                disabled={tableLoading || !bookingsTablePagination.hasNextPage}
+                variant="outline"
+                size="sm"
+              >
+                Next
+              </Button>
+              <Button
+                onClick={() => handleTablePageChange(bookingsTablePagination.totalPages)}
+                disabled={tableLoading || !bookingsTablePagination.hasNextPage}
+                variant="outline"
+                size="sm"
+              >
+                Last
+              </Button>
+            </div>
           </div>
         )}
       </div>
